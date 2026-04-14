@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Nuked Man</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #000;
+    height: 100%;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    width: 100vw;
+    height: auto;
+    max-height: 100vh;
+    display: block;
+    background: #000;
+  }
+  #touch {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+  .btn {
+    position: absolute;
+    bottom: 20px;
+    width: 70px;
+    height: 70px;
+    border: 2px solid #fff;
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    font-family: monospace;
+    font-size: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    border-radius: 8px;
+  }
+  #bL { left: 20px; }
+  #bR { left: 110px; }
+  #bJ { right: 20px; }
+  #bP { right: 110px; }
+  @media (hover: hover) and (pointer: fine) {
+    #touch { display: none; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="game" width="320" height="180"></canvas>
+  <div id="touch">
+    <div class="btn" id="bL">&lt;</div>
+    <div class="btn" id="bR">&gt;</div>
+    <div class="btn" id="bP">Z</div>
+    <div class="btn" id="bJ">^</div>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>
