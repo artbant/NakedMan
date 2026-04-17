@@ -81,7 +81,7 @@ const JUMP = [
 ];
 
 function drawSprite(spr, ox, oy, flip) {
-  ctx.fillStyle = '#E4E4E4';
+  ctx.fillStyle = '#fff';
   const sw = 15;
   for (const [sx, sy, sw2] of spr) {
     const rx = flip ? (sw - sx - sw2) : sx;
@@ -97,6 +97,12 @@ const player = {
   state: 'idle', frame: 0, ftick: 0, bobt: 0, bobY: 0,
   punching: false, ptimer: 0, pframe: 0, pcooldown: 0,
   speedBoost: 0, invTimer: 0,
+  // полировка движения
+  coyoteTimer: 0,    // время в воздухе после того как сошёл с земли (для coyote time)
+  jumpBufferTimer: 0, // время с последнего нажатия прыжка (для input buffer)
+  crouching: false,   // присел
+  airJumps: 0,        // оставшиеся прыжки в воздухе (сбрасывается при касании земли)
+  maxAirJumps: 1,     // сколько всего прыжков в воздухе — пока 1 (double jump)
 };
 
 const START = { x: 2 * T + 4, y: 0 };
@@ -122,26 +128,42 @@ function collide(p, dt) {
 }
 
 // вызывается когда pframe переходит в 2
-// разрушает тайлы в зоне удара: перед кулаком + тайл выше + тайл ниже
+// разрушает тайлы в зоне удара перед собой
 function punchBreakTiles() {
   const p = player;
 
-  // мировые координаты кулака
+  // мировые координаты зоны удара перед собой
   const hitX = p.facing > 0 ? p.x + p.w + 2 : p.x - 2;
-  const midY  = p.y + p.h * 0.5;
 
-  // бьём по 3 тайлам по вертикали перед собой
-  breakTile(hitX, midY - T * 0.5); // верхний
-  breakTile(hitX, midY);           // средний (основной)
-  breakTile(hitX, midY + T * 0.5); // нижний
+  // Бьём по 3 точкам по вертикали ПЕРЕД СОБОЙ — от макушки до середины тела.
+  // НЕ бьём по уровню ног — это предотвращает случайное разрушение тайла
+  // под собой при обычном ударе. Для удара вниз — отдельная логика (↓+Z).
+  breakTile(hitX, p.y + 2);              // чуть ниже макушки
+  breakTile(hitX, p.y + p.h * 0.33);     // верхняя треть
+  breakTile(hitX, p.y + p.h * 0.66);     // нижняя треть (но не ступни)
+
+  // удар вниз: если зажата стрелка вниз — бьём под ноги
+  const isDown = (typeof keys !== 'undefined') && (keys['ArrowDown'] || keys['KeyS']);
+  if (isDown) {
+    const underX = p.x + p.w / 2;
+    breakTile(underX, p.y + p.h + 2);       // прямо под ногами
+    breakTile(underX, p.y + p.h + T * 0.5); // на полтайла ниже
+  }
+
+  // удар вверх: если игрок прыгает вверх (vy < 0) — достаёт потолок
+  if (p.vy < -50) {
+    const overX = p.x + p.w / 2;
+    breakTile(overX, p.y - 2);       // прямо над головой
+    breakTile(overX, p.y - T * 0.5); // на полтайла выше
+  }
 
   // небольшой отскок назад при ударе
   p.vx = p.facing > 0 ? -25 : 25;
 }
 
-function drawPlayer(cam) {
+function drawPlayer() {
   const p = player;
-  const px = Math.round(p.x - cam);
+  const px = Math.round(p.x - game.cam);
   const py = Math.round(p.y);
   let spr = STAY;
   let flip = p.facing < 0;

@@ -9,10 +9,82 @@ let WORLD_W = 0;
 // Заполняется при generateMap
 let BREAKABLE_MAP = [];
 
+// ── БИОМЫ ────────────────────────────────────────────────────────────
+// Определяют визуальный стиль уровня. Меняются каждые 4 уровня.
+// Все биомы в ЧБ-палитре, различия через паттерны дизеринга и плотности.
+// BIOME.sky — функция, рисующая небо в кэше-канвасе.
+// BIOME.undergroundDensity — плотность белых точек в подвале (сквозь трещины).
+// BIOME.tileDamageBase — базовая плотность "крошки" в тайле (0=нет, 1=сплошной белый).
+const BIOMES = [
+  {
+    // VOID — изначальный стиль. Чёрное небо, редкие звёзды вверху.
+    name: 'VOID',
+    starDensity: 0.15,   // доля звёзд у верха (быстро редеет)
+    starDecay: 3.5,      // степень кривой (больше = быстрее редеет)
+    horizonFrac: 0.60,   // где проходит горизонт по высоте экрана
+    undergroundDensity: 0.06, // белые точки в подвале (пробивающийся свет)
+    tileCrackIntensity: 1.0,  // множитель "крошки" в тайле при повреждении
+  },
+  {
+    // DUST — "запылённый" мир. Горизонт выше, больше низкого тумана.
+    // Звёзд меньше, но есть "пыль" у горизонта.
+    name: 'DUST',
+    starDensity: 0.08,
+    starDecay: 2.5,
+    horizonFrac: 0.50,   // горизонт выше — больше "земли"
+    undergroundDensity: 0.10, // больше "пыли" в камнях
+    tileCrackIntensity: 1.3,
+    // особенность: туманный слой у горизонта (нарисуем в sky)
+    hasMist: true,
+  },
+  {
+    // GLARE — "снежный" / яркий мир. Звёзды плотнее, разбросаны выше к горизонту.
+    name: 'GLARE',
+    starDensity: 0.22,
+    starDecay: 2.0,
+    horizonFrac: 0.55,
+    undergroundDensity: 0.04,
+    tileCrackIntensity: 0.7,
+  },
+  {
+    // HIVE — "клетчатый" мир. В тайлах есть структурный паттерн.
+    // Звёзды как битые — не равномерно распределены.
+    name: 'HIVE',
+    starDensity: 0.12,
+    starDecay: 4.0,
+    horizonFrac: 0.55,
+    undergroundDensity: 0.08,
+    tileCrackIntensity: 1.1,
+    // битый паттерн неба: звёзды кластерами (хэш с низкой частотой)
+    clusteredStars: true,
+  },
+];
+
+let currentBiome = BIOMES[0];
+
+function getBiome(lvl) {
+  // каждые 4 уровня новый биом, потом циклически
+  return BIOMES[Math.floor((lvl - 1) / 4) % BIOMES.length];
+}
+
 function generateMap(lvl = 1) {
+  currentBiome = getBiome(lvl);
+  // инвалидируем кэш неба — нужен новый под текущий биом
+  _skyCache = null;
+
+  // Если для этого уровня есть ручной ASCII-уровень — используем его
+  if (typeof hasAsciiLevel === 'function' && hasAsciiLevel(lvl)) {
+    // парсер заполнит MAP/BREAKABLE_MAP/MW/WORLD_W и вернёт surface
+    // applyAsciiLevel мы вызовем отдельно из initLevel (после того как
+    // будут готовы функции spawnEnemy и др.)
+    parseAsciiLevel(getAsciiLevel(lvl));
+    return;
+  }
+
   // чем выше уровень — длиннее карта, больше пропастей
-  const baseW = 65 + Math.min(lvl * 4, 35);
-  const totalWidth = rnd(baseW, baseW + 15);
+  // Удвоенная ширина: было 65+4*lvl (капс 100), стало 130+8*lvl (капс 200)
+  const baseW = 130 + Math.min(lvl * 8, 70);
+  const totalWidth = rnd(baseW, baseW + 30);
   MW = totalWidth;
   WORLD_W = MW * T;
 
@@ -45,23 +117,26 @@ function generateMap(lvl = 1) {
   for (let x = MW - 6; x < MW; x++) surface[x] = surface[MW - 7] || 6;
 
   // ── ШАГ 2: ЗАПОЛНЯЕМ ТАЙЛЫ ───────────────────────────────────────────
+  // Все тайлы разрушаемы, но прочность растёт с глубиной.
+  // Это предотвращает "диагональный скип": прорыть туннель через монолит
+  // вниз и вперёд к финалу. Глубокие тайлы требуют столько ударов что
+  // идти поверху становится явно быстрее.
   for (let x = 0; x < MW; x++) {
     const sf = surface[x];
     for (let y = sf; y < MH; y++) {
       MAP[y][x] = rndTex();
       const depth = y - sf;
-      let br;
-      if (depth === 0)      br = Math.random() < 0.6 ? 1 : 2;
-      else if (depth === 1) br = Math.random() < 0.3 ? 1 : Math.random() < 0.85 ? 2 : 0;
-      else                  br = Math.random() < 0.1 ? 2 : 0;
-      BREAKABLE_MAP[y][x] = br;
+      // depth 0-1 → 1 HP (поверхность, хрупкая)
+      // depth 2-4 → 2 HP (средний слой)
+      // depth 5+  → 3 HP (глубина, очень прочная)
+      BREAKABLE_MAP[y][x] = depth < 2 ? 1 : (depth < 5 ? 2 : 3);
     }
   }
 
   // ── ШАГ 3: ВПАДИНЫ И РЕДКИЕ ПРОПАСТИ ─────────────────────────────────
   // Впадина = углубление в несколько тайлов (не насквозь)
   // Пропасть = только 1-2 тайла шириной и только иногда
-  const numFeatures = rnd(2 + Math.min(lvl, 3), 4 + Math.min(lvl, 5));
+  const numFeatures = rnd(4 + Math.min(lvl * 2, 6), 8 + Math.min(lvl * 2, 10));
   const usedX = [];
   for (let p = 0; p < numFeatures; p++) {
     const fx = rnd(8, MW - 10);
@@ -95,7 +170,7 @@ function generateMap(lvl = 1) {
   }
 
   // ── ШАГ 4: ПЕЩЕРЫ ВНУТРИ МОНОЛИТА ───────────────────────────────────
-  const numCaves = rnd(2, 3);
+  const numCaves = rnd(4, 6);
   for (let c = 0; c < numCaves; c++) {
     const caveX = rnd(8, MW - 12);
     const caveSurf = surface[caveX];
@@ -140,11 +215,7 @@ function generateMap(lvl = 1) {
     }
   }
 
-  // ── ШАГ 6: СТАРТОВАЯ И ФИНАЛЬНАЯ ЗОНЫ ПРОЧНЫЕ ───────────────────────
-  for (let x = 0; x < 5; x++)
-    for (let y = surface[x]; y < MH; y++) BREAKABLE_MAP[y][x] = 0;
-  for (let x = MW - 6; x < MW; x++)
-    for (let y = (surface[x] || 4); y < MH; y++) BREAKABLE_MAP[y][x] = 0;
+  // (ШАГ 6 убран — все тайлы разрушаемы, включая старт и финал)
 }
 
 // ── ПОРТАЛ ────────────────────────────────────────────────────────────
@@ -157,33 +228,28 @@ function initPortal() {
   portalX = px * T;
 }
 
-function drawPortal(cam) {
-  const sx = Math.round(portalX - cam);
+function drawPortal() {
+  const sx = Math.round(portalX - game.cam);
   const sy = Math.round(portalY);
   if (sx + T < 0 || sx > GW) return;
   const blink = Math.floor(Date.now() / 150) % 2;
 
   // арка пикселями
   ctx.fillStyle = blink ? '#fff' : '#E4E4E4';
-  // верхняя перекладина
   ctx.fillRect(sx + 4, sy, T - 8, 3);
-  // левая стойка
   ctx.fillRect(sx, sy + 3, 4, T * 2 - 3);
-  // правая стойка
   ctx.fillRect(sx + T - 4, sy + 3, 4, T * 2 - 3);
 
   // внутри — мигающие пиксели
-  ctx.fillStyle = blink ? '#444' : '#222';
+  ctx.fillStyle = '#000';
   for (let dy = 4; dy < T * 2 - 4; dy += 4)
     for (let dx = 6; dx < T - 6; dx += 4)
       ctx.fillRect(sx + dx, sy + dy, 2, 2);
 
-  // надпись EXIT над аркой
-  ctx.fillStyle = blink ? '#fff' : '#888';
-  ctx.fillRect(sx + 5, sy - 7, 1, 5); // E
-  ctx.fillRect(sx + 5, sy - 7, 4, 1);
-  ctx.fillRect(sx + 5, sy - 5, 3, 1);
-  ctx.fillRect(sx + 5, sy - 3, 4, 1);
+  // надпись EXIT над аркой — через пиксельный шрифт (4 буквы × 4px + 3 промежутка = 19px)
+  if (typeof pixelText === 'function') {
+    pixelText('EXIT', sx + Math.round(T / 2) - 8, sy - 8, '#fff', 1);
+  }
 }
 
 function checkPortal() {
@@ -208,7 +274,7 @@ function breakTile(wx, wy) {
   if (bt === 0) return false; // неразрушаемый
 
   const key = tileKey(tx, ty);
-  const maxHP = bt === 1 ? 1 : 2;
+  const maxHP = bt === 1 ? 1 : bt === 2 ? 2 : 3;
   if (tileHP[key] === undefined) tileHP[key] = maxHP;
   tileHP[key]--;
 
@@ -216,7 +282,7 @@ function breakTile(wx, wy) {
   flashTile(tx, ty);
 
   // частицы при ударе
-  const cx = (tx + 0.5) * T - cam;
+  const cx = (tx + 0.5) * T - game.cam;
   const cy = (ty + 0.5) * T;
   const count = bt === 1 ? 10 : 6;
   for (let i = 0; i < count; i++) {
@@ -236,7 +302,15 @@ function breakTile(wx, wy) {
       const spd = 30 + Math.random() * 60;
       particles.push({ x: cx, y: cy, vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd-30, life:1, maxLife:0.5+Math.random()*0.3, size:3 });
     }
+    // уведомляем врагов о разрушении — громкий звук
+    if (typeof notifyEnemiesOfSound === 'function') {
+      notifyEnemiesOfSound((tx + 0.5) * T, (ty + 0.5) * T, T * 10);
+    }
     return true;
+  }
+  // даже при обычном ударе по тайлу (не разрушил) — тихий звук
+  if (typeof notifyEnemiesOfSound === 'function') {
+    notifyEnemiesOfSound((tx + 0.5) * T, (ty + 0.5) * T, T * 6);
   }
   return false;
 }
@@ -308,6 +382,7 @@ function buildSurfaceGraph() {
   }
 }
 
+
 // возвращает случайную точку по фильтру
 function getSurfacePoints(filter) {
   return surfacePoints.filter(filter);
@@ -324,95 +399,66 @@ function updateTileFlash(dt) {
   }
 }
 
-function drawTile(tx, ty, type, cam) {
-  const x = tx * T - cam, y = ty * T;
+function drawTile(tx, ty, type) {
+  const x = Math.round(tx * T - game.cam), y = ty * T;
   if (x + T < 0 || x > GW) return;
 
   const bt = (BREAKABLE_MAP[ty] && BREAKABLE_MAP[ty][tx]) || 0;
   const key = tileKey(tx, ty);
   const flashing = tileFlash[key] !== undefined && Math.floor(tileFlash[key] * 20) % 2 === 0;
 
-  // ЧБ палитра по прочности:
-  // хрупкий  — светлый  #e0e0e0 (читается как лёгкий материал)
-  // средний  — средний  #b4b4b4
-  // прочный  — тёмный   #787878 (читается как камень)
-  const bgCol  = flashing ? '#fff' : bt === 1 ? '#e0e0e0' : bt === 2 ? '#b4b4b4' : '#787878';
-  const patCol = flashing ? '#ccc' : bt === 1 ? '#b8b8b8' : bt === 2 ? '#888'    : '#555';
-  const rimTop = flashing ? '#fff' : bt === 1 ? '#f0f0f0' : bt === 2 ? '#ccc'    : '#999';
-  const rimBot = flashing ? '#ccc' : bt === 1 ? '#aaa'    : bt === 2 ? '#666'    : '#444';
-
-  ctx.fillStyle = bgCol;
-  ctx.fillRect(x, y, T, T);
-  ctx.fillStyle = patCol;
-  if (type === 1) {
-    for (let dy = 0; dy < T; dy += 4)
-      for (let dx = (dy / 4 % 2) * 4; dx < T; dx += 8)
-        ctx.fillRect(x + dx, y + dy, 4, 4);
-  } else if (type === 2) {
-    for (let dx = 2; dx < T; dx += 4) ctx.fillRect(x + dx, y, 2, T);
-  } else if (type === 3) {
-    for (let row = 0; row < T; row += 6) {
-      const off = (Math.floor(row / 6) % 2) * 6;
-      ctx.fillRect(x, y + row, T, 1);
-      for (let bx = off; bx < T; bx += 12) ctx.fillRect(x + bx, y + row, 1, 6);
-    }
-  } else if (type === 4) {
-    for (let d = 0; d < T * 2; d += 5)
-      for (let s = 0; s < T; s++) {
-        const px = d + s;
-        if (px >= 0 && px < T) ctx.fillRect(x + px, y + s, 2, 1);
+  if (flashing) {
+    // при ударе тайл "вспыхивает" — инверсия: почти весь белый с редкими
+    // чёрными точками (плотность белого 0.85)
+    ctx.fillStyle = '#000';
+    ctx.fillRect(x, y, T, T);
+    ctx.fillStyle = '#fff';
+    const d16 = 0.85 * 16;
+    for (let dy = 0; dy < T; dy++) {
+      const row = BAYER4[(y + dy) % 4];
+      for (let dx = 0; dx < T; dx++) {
+        if (d16 > row[(x + dx) % 4]) ctx.fillRect(x + dx, y + dy, 1, 1);
       }
-  } else if (type === 5) {
-    for (let dy = 3; dy < T; dy += 4)
-      for (let dx = 3; dx < T; dx += 4)
-        ctx.fillRect(x + dx, y + dy, 2, 2);
-  } else if (type === 6) {
-    for (let s = 0; s < 5; s++) {
-      const m = s * 2, sz = T - s * 4;
-      if (sz <= 2) break;
-      ctx.fillRect(x + m, y + m, sz, 2);
-      ctx.fillRect(x + m, y + T - m - 2, sz, 2);
-      ctx.fillRect(x + m, y + m, 2, sz);
-      ctx.fillRect(x + T - m - 2, y + m, 2, sz);
     }
-  } else if (type === 7) {
-    for (let row = 0; row < T; row += 3)
-      for (let col = 0; col < T; col++) {
-        const z = col % 8;
-        if (z < 4 ? z === row % 4 : 7 - z === row % 4) ctx.fillRect(x + col, y + row, 1, 2);
-      }
-  } else if (type === 8) {
-    for (let dy = 0; dy < T; dy += 4) ctx.fillRect(x, y + dy, T, 1);
-    for (let dx = 0; dx < T; dx += 4) ctx.fillRect(x + dx, y, 1, T);
+    return;
   }
 
-  // рамка
-  ctx.fillStyle = rimTop;
-  ctx.fillRect(x, y, T, 1);
-  ctx.fillStyle = rimBot;
-  ctx.fillRect(x, y + T - 1, T, 1);
-  ctx.fillRect(x, y, 1, T);
-  ctx.fillRect(x + T - 1, y, 1, T);
+  // ── МОНОЛИТ ─────────────────────────────────────────────────────
+  // Чёрный тайл. Повреждённый — сквозь него пробивается "свет"
+  // (белые точки по чёрному), плотность белого растёт с потерей HP.
+  const hp = tileHP[key];
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x, y, T, T);
 
-  // трещины если повреждён
-  if (tileHP[key] !== undefined) {
-    ctx.fillStyle = bt === 1 ? '#888' : '#333';
-    ctx.fillRect(x+4, y+5, 1, 4);
-    ctx.fillRect(x+5, y+7, 3, 1);
-    ctx.fillRect(x+T-5, y+9, 1, 5);
-    ctx.fillRect(x+T-7, y+11, 3, 1);
+  if (hp !== undefined) {
+    const maxHP = bt === 1 ? 1 : bt === 2 ? 2 : 3;
+    const ratio = hp / maxHP;
+    // Плотность "крошки" умножается на биомный множитель
+    const biomeIntensity = (currentBiome && currentBiome.tileCrackIntensity) || 1.0;
+    const whiteDensity = (0.45 - ratio * 0.30) * biomeIntensity;
+    ctx.fillStyle = '#fff';
+    const d16 = Math.min(16, whiteDensity * 16);
+    for (let dy = 0; dy < T; dy++) {
+      const row = BAYER4[(y + dy) % 4];
+      for (let dx = 0; dx < T; dx++) {
+        if (d16 > row[(x + dx) % 4]) ctx.fillRect(x + dx, y + dy, 1, 1);
+      }
+    }
   }
 }
 
+
 // ── ПОДЗЕМНЫЙ СЛОЙ — рисуется ДО тайлов ─────────────────────────────
-// Там где тайл сломан но рядом есть монолит — виден тёмный "подвал"
-function drawUnderground(cam) {
-  const s = Math.floor(cam / T);
+// Там где тайл сломан но рядом есть монолит — виден "подвал".
+// В ЧБ стиле: плотный дизеринг (много чёрного, редкие белые точки-камни).
+function drawUnderground() {
+  const s = Math.floor(game.cam / T);
   const e = Math.min(MW, s + Math.ceil(GW / T) + 2);
+  const biomeDensity = (currentBiome && currentBiome.undergroundDensity) || 0.06;
+  const d16 = biomeDensity * 16;
   for (let ty = 0; ty < MH; ty++) {
     for (let tx = s; tx < e; tx++) {
       if (MAP[ty][tx] !== 0) continue;
-      // только внутри монолита — есть хоть один тайл рядом
       const hasNeighbor =
         (ty > 0      && MAP[ty-1][tx]) ||
         (ty < MH-1   && MAP[ty+1][tx]) ||
@@ -420,145 +466,272 @@ function drawUnderground(cam) {
         (tx < MW-1   && MAP[ty][tx+1]);
       if (!hasNeighbor) continue;
 
-      const x = Math.round(tx * T - cam);
+      const x = Math.round(tx * T - game.cam);
       const y = ty * T;
 
-      // тёмный подвал
-      ctx.fillStyle = '#0d0d0d';
+      ctx.fillStyle = '#000';
       ctx.fillRect(x, y, T, T);
-      // паттерн — редкие точки имитируют камень в темноте
-      ctx.fillStyle = '#181818';
-      for (let dy = 3; dy < T - 2; dy += 7)
-        for (let dx = 3; dx < T - 2; dx += 7)
-          ctx.fillRect(x + dx, y + dy, 2, 2);
-      // тонкая тёмная рамка на верхней и левой грани
-      ctx.fillStyle = '#1f1f1f';
-      ctx.fillRect(x, y, T, 1);
-      ctx.fillRect(x, y, 1, T);
+      // белые точки с плотностью из биома
+      ctx.fillStyle = '#fff';
+      for (let dy = 0; dy < T; dy++) {
+        const row = BAYER4[(y + dy) % 4];
+        for (let dx = 0; dx < T; dx++) {
+          if (d16 > row[(x + dx) % 4]) {
+            ctx.fillRect(x + dx, y + dy, 1, 1);
+          }
+        }
+      }
     }
   }
 }
 
-function drawTilemap(cam, dt) {
+function drawTilemap(dt) {
   if (dt) updateTileFlash(dt);
-  drawUnderground(cam);
-  const s = Math.floor(cam / T);
+  drawUnderground();
+  const s = Math.floor(game.cam / T);
   const e = Math.min(MW, s + Math.ceil(GW / T) + 2);
   for (let ty = 0; ty < MH; ty++)
     for (let tx = s; tx < e; tx++)
-      if (MAP[ty][tx]) drawTile(tx, ty, MAP[ty][tx], cam);
+      if (MAP[ty][tx]) drawTile(tx, ty, MAP[ty][tx]);
 }
 
 function drawMoon(cx, cy) {
+  // Луна в ЧБ: диск — белый с редким дизерингом (density 0.15),
+  // кратеры — более плотный дизеринг (density 0.55).
   const rows = [[4,6],[2,10],[1,12],[0,14],[0,14],[0,14],[0,14],[0,14],[1,12],[2,10],[4,6]];
-  ctx.fillStyle = '#d0d0d0';
+
+  // 1) белый диск — сплошной белый
+  ctx.fillStyle = '#fff';
   for (let i = 0; i < rows.length; i++) {
     const [ox, w] = rows[i];
     ctx.fillRect(cx - Math.floor(w / 2), cy + i, w, 1);
   }
-  ctx.fillStyle = '#aaa';
-  ctx.fillRect(cx - 3, cy + 3, 4, 2);
-  ctx.fillRect(cx + 2, cy + 7, 3, 2);
-}
 
-function drawBgFar(cam) {
-  // фон другого мира — чистый чёрный с геометрическими аномалиями
-  ctx.fillStyle = '#050505';
-  ctx.fillRect(0, 0, GW, GH);
-
-  const t = Date.now() / 1000;
-  const off = cam * 0.05;
-
-  // далёкие "звёзды" — не обычные, а квадратные и мигающие
-  ctx.fillStyle = '#1a1a1a';
-  const stars = [
-    [40,20],[110,8],[190,30],[280,14],[370,22],[450,5],
-    [60,55],[160,42],[250,60],[340,48],[430,35],
-    [90,85],[200,75],[310,90],[420,70],[470,80],
-    [30,110],[150,100],[270,115],[390,105],[460,118],
-  ];
-  for (const [sx, sy] of stars) {
-    const rx = ((sx - off * 0.3) % (GW + 20) + GW + 20) % (GW + 20) - 10;
-    const blink = Math.sin(t * 0.7 + sx * 0.1) > 0.6;
-    if (blink) ctx.fillRect(Math.round(rx), sy, 2, 2);
-    else ctx.fillRect(Math.round(rx), sy, 1, 1);
-  }
-
-  // геометрические структуры на горизонте — пирамиды/обелиски
-  ctx.fillStyle = '#0e0e0e';
-  const shapes = [
-    { x: 80,  h: 60, w: 30 },
-    { x: 180, h: 90, w: 20 },
-    { x: 290, h: 50, w: 40 },
-    { x: 380, h: 75, w: 25 },
-    { x: 460, h: 40, w: 35 },
-    { x: 550, h: 65, w: 18 },
-  ];
-  for (const s of shapes) {
-    const rx = Math.round(((s.x - off * 0.15) % (WORLD_W * 0.05 + GW) + WORLD_W * 0.05 + GW) % (WORLD_W * 0.05 + GW) - 20);
-    // обелиск — тонкий и высокий
-    ctx.fillRect(rx - s.w/4, GH - s.h, s.w/2, s.h);
-    // основание шире
-    ctx.fillRect(rx - s.w/2, GH - 8, s.w, 8);
-  }
-
-  // медленно пульсирующие линии горизонта
-  ctx.fillStyle = '#111';
-  for (let x = 0; x < GW; x += 3) {
-    const pulse = Math.sin(t * 0.3 + x * 0.02) * 3;
-    ctx.fillRect(x, Math.round(GH * 0.72 + pulse), 2, 1);
-  }
-}
-
-function drawBgMid(cam) {
-  const t = Date.now() / 1000;
-  const off = cam * 0.25;
-
-  // средний слой — странные строения другого мира
-  // не здания, а абстрактные структуры
-  ctx.fillStyle = '#181818';
-  const structs = [
-    { x: 50,  h: 80,  w: 18, type: 0 },
-    { x: 130, h: 110, w: 12, type: 1 },
-    { x: 220, h: 70,  w: 22, type: 0 },
-    { x: 310, h: 130, w: 10, type: 2 },
-    { x: 400, h: 90,  w: 16, type: 1 },
-    { x: 500, h: 60,  w: 24, type: 0 },
-    { x: 600, h: 100, w: 14, type: 2 },
-  ];
-
-  for (const s of structs) {
-    const rx = Math.round(((s.x - off) % (GW * 2) + GW * 2) % (GW * 2) - 30);
-    if (rx > GW + 30 || rx < -30) continue;
-
-    if (s.type === 0) {
-      // прямоугольная башня с окошками
-      ctx.fillStyle = '#181818';
-      ctx.fillRect(rx - s.w/2, GH - s.h, s.w, s.h);
-      ctx.fillStyle = '#0a0a0a';
-      for (let wy = GH - s.h + 5; wy < GH - 10; wy += 12) {
-        ctx.fillRect(rx - 3, wy, 3, 5);
-        ctx.fillRect(rx + 1, wy, 3, 5);
+  // 2) тонкий дизеринг по всему диску — "фактура" луны
+  ctx.fillStyle = '#000';
+  const diskD16 = 0.15 * 16;
+  for (let i = 0; i < rows.length; i++) {
+    const [, w] = rows[i];
+    const startX = cx - Math.floor(w / 2);
+    const py = cy + i;
+    const bayerRow = BAYER4[((py % 4) + 4) % 4];
+    for (let j = 0; j < w; j++) {
+      const px = startX + j;
+      if (diskD16 > bayerRow[((px % 4) + 4) % 4]) {
+        ctx.fillRect(px, py, 1, 1);
       }
-    } else if (s.type === 1) {
-      // зигзаг-структура
-      ctx.fillStyle = '#181818';
-      ctx.fillRect(rx - s.w/2, GH - s.h, s.w, s.h);
-      ctx.fillRect(rx - s.w, GH - s.h * 0.6, s.w, s.h * 0.6);
-    } else {
-      // арка
-      ctx.fillStyle = '#181818';
-      ctx.fillRect(rx - s.w, GH - s.h, s.w/2, s.h);
-      ctx.fillRect(rx + s.w/2, GH - s.h, s.w/2, s.h);
-      ctx.fillRect(rx - s.w, GH - s.h, s.w * 2, s.w/2);
     }
   }
 
-  // мерцающие "нити" — как электрические разряды
-  ctx.fillStyle = '#222';
-  for (let i = 0; i < 4; i++) {
-    const nx = Math.round(((i * 120 + t * 20) % GW));
-    const ny = Math.round(GH * 0.4 + Math.sin(t * 2 + i) * 20);
-    ctx.fillRect(nx, ny, 1, Math.round(GH * 0.3 + Math.sin(t + i * 0.5) * 10));
+  // 3) кратеры — плотные пятна дизеринга
+  const craters = [
+    { x: cx - 3, y: cy + 3, w: 4, h: 2 },
+    { x: cx + 2, y: cy + 7, w: 3, h: 2 },
+  ];
+  const craterD16 = 0.55 * 16;
+  for (const c of craters) {
+    for (let dy = 0; dy < c.h; dy++) {
+      const py = c.y + dy;
+      const bayerRow = BAYER4[((py % 4) + 4) % 4];
+      for (let dx = 0; dx < c.w; dx++) {
+        const px = c.x + dx;
+        if (craterD16 > bayerRow[((px % 4) + 4) % 4]) {
+          ctx.fillRect(px, py, 1, 1);
+        }
+      }
+    }
   }
 }
+
+// ── СНЕГ — инициализируется один раз ────────────────────────────────
+const snowParticles = [];
+(function initSnow() {
+  for (let i = 0; i < 90; i++) {
+    const layer = i < 35 ? 1 : i < 65 ? 2 : 3;
+    snowParticles.push({
+      x: Math.random() * GW,
+      y: Math.random() * GH,
+      speed: layer === 1 ? 10 + Math.random()*15 : layer === 2 ? 28 + Math.random()*18 : 55 + Math.random()*25,
+      drift: (Math.random() - 0.5) * 2,
+      phase: Math.random() * Math.PI * 2,
+      size: layer === 3 ? 2 : 1,
+      layer,
+    });
+  }
+})();
+
+function drawSnow(dt) {
+  const t = Date.now() / 1000;
+  for (const p of snowParticles) {
+    // ИНВЕРСИЯ: движение снизу вверх — частицы летят ВВЕРХ
+    p.y -= p.speed * dt;
+    p.x += Math.sin(t * 0.8 + p.phase) * 0.4;
+    // параллакс с камерой
+    const px = (p.x - game.cam * (p.layer === 1 ? 0.02 : p.layer === 2 ? 0.08 : 0.18)) % (GW + 20);
+    const drawX = ((px % GW) + GW) % GW;
+    // респавн: когда улетел за верх — возвращаем вниз
+    if (p.y < -2) { p.y = GH + 2; p.x = Math.random() * GW; }
+
+    const alpha = p.layer === 1 ? 0.3 : p.layer === 2 ? 0.55 : 0.85;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(Math.round(drawX), Math.round(p.y), p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ── ПРОЦЕДУРНЫЙ ПРОФИЛЬ ГОРИЗОНТА ────────────────────────────────────
+// детерминированный — один раз считается, не дрожит каждый кадр
+function horizonProfile(baseY, amplitude, freq, offset) {
+  // возвращает высоту для каждой X-позиции (0..GW)
+  // через сумму синусов с разными частотами — органичный силуэт
+  return function(x) {
+    const s1 = Math.sin((x + offset) * freq) * amplitude;
+    const s2 = Math.sin((x + offset * 1.3) * freq * 2.1) * amplitude * 0.4;
+    const s3 = Math.sin((x + offset * 0.7) * freq * 0.5) * amplitude * 0.3;
+    return Math.round(baseY + s1 + s2 + s3);
+  };
+}
+
+// ── ДИЗЕРИНГ BAYER 4×4 ───────────────────────────────────────────────
+// Упорядоченный дизеринг: threshold-матрица даёт стабильный, не дрожащий
+// паттерн белых точек на чёрной подложке. Плотность 0..1 задаёт долю белого:
+// 0.0 = абсолютный чёрный (ничего не рисуем), 1.0 = сплошной белый.
+// Чем чернее — тем БЛИЖЕ к игроку/впереди. Дальние планы светлее.
+const BAYER4 = [
+  [ 0,  8,  2, 10],
+  [12,  4, 14,  6],
+  [ 3, 11,  1,  9],
+  [15,  7, 13,  5],
+];
+
+// Рисует прямоугольник (x,y,w,h) белыми точками на чёрной подложке,
+// плотностью density. Вызывающий код выставляет fillStyle = '#fff'.
+function ditherFill(x, y, w, h, density) {
+  if (density <= 0) return;
+  if (density >= 1) { ctx.fillRect(x, y, w, h); return; }
+  const d16 = density * 16;
+  const x0 = x | 0, y0 = y | 0;
+  const x1 = x0 + (w | 0), y1 = y0 + (h | 0);
+  for (let py = y0; py < y1; py++) {
+    const row = BAYER4[((py % 4) + 4) % 4];
+    for (let px = x0; px < x1; px++) {
+      if (d16 > row[((px % 4) + 4) % 4]) {
+        ctx.fillRect(px, py, 1, 1);
+      }
+    }
+  }
+}
+
+// Силуэтный план — над профилем прозрачно (оставляем подложку),
+// ниже — заполняем дизерингом плотности density белыми точками.
+function drawDitheredSilhouettePlan(parallax, density, baseY, amplitude, freq, offsetBase) {
+  const offset = offsetBase - game.cam * parallax;
+  const profile = horizonProfile(baseY, amplitude, freq, offset);
+  const d16 = density * 16;
+  // fillStyle уже '#fff' — вызывающий код выставляет один раз
+  for (let x = 0; x <= GW; x++) {
+    const top = profile(x);
+    if (top >= GH) continue;
+    const startY = top < 0 ? 0 : top;
+    if (density >= 1) {
+      ctx.fillRect(x, startY, 1, GH - startY);
+      continue;
+    }
+    const bayerCol = ((x % 4) + 4) % 4;
+    for (let py = startY; py < GH; py++) {
+      if (d16 > BAYER4[((py % 4) + 4) % 4][bayerCol]) {
+        ctx.fillRect(x, py, 1, 1);
+      }
+    }
+  }
+}
+
+// ── КЕШ НЕБА ─────────────────────────────────────────────────────────
+// Логика: чёрный горизонт (нижняя часть экрана абсолютно чёрная),
+// редкие БЕЛЫЕ точки в верхней части неба — звёзды/искры.
+// Расположение РАНДОМНОЕ (через хэш координат), не по bayer-сетке.
+// Плотность максимальна у самого верха и быстро падает к горизонту.
+let _skyCache = null;
+function getSkyCache() {
+  if (_skyCache) return _skyCache;
+  const cnv = (typeof OffscreenCanvas !== 'undefined')
+    ? new OffscreenCanvas(GW, GH)
+    : Object.assign(document.createElement('canvas'), { width: GW, height: GH });
+  const c = cnv.getContext('2d');
+  c.fillStyle = '#000';
+  c.fillRect(0, 0, GW, GH);
+
+  const biome = currentBiome || BIOMES[0];
+  c.fillStyle = '#fff';
+  const horizonY = Math.round(GH * biome.horizonFrac);
+
+  // Хэш для псевдослучайного распределения
+  const hash = (x, y) => {
+    let h = (x * 73856093) ^ (y * 19349663);
+    h = (h ^ (h >>> 13)) * 1274126177;
+    return ((h ^ (h >>> 16)) >>> 0) / 0xffffffff;
+  };
+  // Низкочастотный хэш для "кластеров" — зёрна размером ~8×8
+  const clusterHash = (x, y) => hash(Math.floor(x / 8), Math.floor(y / 8));
+
+  for (let y = 0; y < horizonY; y++) {
+    const fromTop = y / horizonY;
+    const density = biome.starDensity * Math.pow(1 - fromTop, biome.starDecay);
+    if (density < 0.001) continue;
+    for (let x = 0; x < GW; x++) {
+      let effective = density;
+      // кластерный модификатор в биомах типа HIVE: звёзды идут зернами,
+      // некоторые зёрна полностью без звёзд
+      if (biome.clusteredStars) {
+        const cluster = clusterHash(x, y);
+        // в зоне с cluster < 0.3 — совсем нет звёзд, в cluster > 0.7 — гуще
+        if (cluster < 0.3) effective = 0;
+        else if (cluster > 0.7) effective *= 1.8;
+      }
+      if (hash(x, y) < effective) {
+        c.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+
+  // туманный слой у горизонта (биом DUST)
+  if (biome.hasMist) {
+    const mistStart = Math.round(horizonY - GH * 0.08);
+    for (let y = mistStart; y < horizonY; y++) {
+      // плотность плавно растёт к горизонту от 0.1 до 0.5
+      const t = (y - mistStart) / (horizonY - mistStart);
+      const density = 0.1 + t * 0.4;
+      for (let x = 0; x < GW; x++) {
+        // пропускаем точки по bayer-паттерну для "пыли"
+        const bayer = BAYER4[(y % 4 + 4) % 4][(x % 4 + 4) % 4];
+        if (density * 16 > bayer && hash(x, y) < 0.7) {
+          c.fillRect(x, y, 1, 1);
+        }
+      }
+    }
+  }
+
+  _skyCache = cnv;
+  return cnv;
+}
+
+function drawBgFar() {
+  // Небо с параллаксом: движется со скоростью 10% от камеры.
+  // Звёзды "едут" намного медленнее мира, создавая ощущение глубины.
+  // Для бесшовности рисуем 2 копии: основную и сдвинутую вправо.
+  const sky = getSkyCache();
+  const PARALLAX = 0.1; // 10% от скорости игрока
+  const offset = (game.cam * PARALLAX) % GW;
+  // Из-за модуло отрицательного числа в JS — нормализуем в [0, GW)
+  const shift = offset >= 0 ? offset : offset + GW;
+  // Основная копия смещена влево на shift пикселей
+  ctx.drawImage(sky, -shift, 0);
+  // Вторая копия справа — для покрытия пустого места
+  ctx.drawImage(sky, GW - shift, 0);
+}
+
+function drawBgMid() {
+  // пусто — дополнительные слои параллакса отсутствуют
+}
+

@@ -12,6 +12,8 @@ const CIG_SPR = [
   [0,2,8],[8,1,2],
   [0,3,6],[1,4,4],
 ];
+// Аптечка: квадратная коробка 10×10 с крестом внутри.
+// Рисуется отдельной функцией (белый корпус + чёрный крест), не через SPR.
 
 // ── ОТРИСОВКА ОБЪЕКТОВ ────────────────────────────────────────────────
 function drawCrate(ox, oy) {
@@ -35,7 +37,7 @@ function drawBarrel(ox, oy) {
     const ind = row < 2 || row > 13 ? 2 : row < 4 || row > 11 ? 1 : 0;
     ctx.fillRect(ox + ind, oy + row, 12 - ind * 2, 1);
   }
-  ctx.fillStyle = '#888';
+  ctx.fillStyle = '#000';
   ctx.fillRect(ox+1, oy+4, 10, 1);
   ctx.fillRect(ox+1, oy+11, 10, 1);
 }
@@ -43,7 +45,7 @@ function drawBarrel(ox, oy) {
 function drawExpBarrel(ox, oy) {
   drawBarrel(ox, oy);
   const blink = Math.floor(Date.now() / 300) % 2 === 0;
-  ctx.fillStyle = blink ? '#ccc' : '#555';
+  ctx.fillStyle = blink ? '#fff' : '#000';
   ctx.fillRect(ox+3,oy+6,1,1); ctx.fillRect(ox+8,oy+6,1,1);
   ctx.fillRect(ox+4,oy+7,1,1); ctx.fillRect(ox+7,oy+7,1,1);
   ctx.fillRect(ox+5,oy+8,2,1);
@@ -65,10 +67,10 @@ function spawnObject(wx, wy, type) {
 function explode(cx, cy) {
   const R = T * 2.5;
   screenShake(6, 0.3);
-  particles.push({ x:cx-cam, y:cy, life:1, maxLife:0.15, size:20, type:'flash', vx:0, vy:0 });
+  particles.push({ x:cx-game.cam, y:cy, life:1, maxLife:0.15, size:20, type:'flash', vx:0, vy:0 });
   for (let i = 0; i < 20; i++) {
     const ang = Math.random() * Math.PI * 2, spd = 50 + Math.random() * 90;
-    particles.push({ x:cx-cam, y:cy, vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd-50, life:1, maxLife:0.5+Math.random()*0.3, size:3 });
+    particles.push({ x:cx-game.cam, y:cy, vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd-50, life:1, maxLife:0.5+Math.random()*0.3, size:3 });
   }
 
   // ── D: взрыв ломает тайлы в радиусе ─────────────────────────────
@@ -100,7 +102,7 @@ function explode(cx, cy) {
     if (e.dead) continue;
     const dx = (e.x+e.w/2)-cx, dy = (e.y+e.h/2)-cy;
     if (Math.hypot(dx,dy) < R) {
-      e.hp=0; e.dead=true; e.deathTimer=0; score++;
+      e.hp=0; e.dead=true; e.deathTimer=0; game.score++; game.enemiesKilled = (game.enemiesKilled || 0) + 1;
       spawnRagdoll(e);
       e.vx=dx>0?160:-160; e.vy=-130;
     }
@@ -118,6 +120,7 @@ function explode(cx, cy) {
   const pdx=(p.x+p.w/2)-cx, pdy=(p.y+p.h/2)-cy;
   if (Math.hypot(pdx,pdy) < R) hurtPlayer(pdx>0?120:-120, -160);
   checkHostageExplosion(cx, cy, R);
+  if (typeof panicEnemiesNear === 'function') panicEnemiesNear(cx, cy, R);
   playSound('explode');
 }
 
@@ -126,7 +129,7 @@ function hitObject(obj) {
   obj.hp--; obj.flashTimer = 0.18;
   for (let i = 0; i < 6; i++) {
     const ang = Math.random() * Math.PI * 2;
-    particles.push({ x:obj.x-cam+obj.w/2, y:obj.y+obj.h/2, vx:Math.cos(ang)*35, vy:Math.sin(ang)*35-25, life:1, maxLife:0.3, size:2 });
+    particles.push({ x:obj.x-game.cam+obj.w/2, y:obj.y+obj.h/2, vx:Math.cos(ang)*35, vy:Math.sin(ang)*35-25, life:1, maxLife:0.3, size:2 });
   }
   if (obj.hp <= 0) {
     obj.dead = true; obj.deathTimer = 0;
@@ -136,7 +139,7 @@ function hitObject(obj) {
     } else {
       for (let i = 0; i < (obj.type==='crate'?14:18); i++) {
         const ang=Math.random()*Math.PI*2, spd=30+Math.random()*60;
-        particles.push({ x:cx-cam, y:cy, vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd-35, life:1, maxLife:0.45+Math.random()*0.3, size:obj.type==='crate'?2:3 });
+        particles.push({ x:cx-game.cam, y:cy, vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd-35, life:1, maxLife:0.45+Math.random()*0.3, size:obj.type==='crate'?2:3 });
       }
     }
   }
@@ -175,20 +178,22 @@ function updateObjects(dt) {
 
 function drawObjects() {
   for (const o of objects) {
-    const ox=Math.round(o.x-cam), oy=Math.round(o.y);
+    const ox=Math.round(o.x-game.cam), oy=Math.round(o.y);
     if (ox+o.w < 0 || ox > GW) continue;
     if (o.dead) {
       ctx.globalAlpha = Math.max(0, 1-o.deathTimer*3);
-      ctx.fillStyle = '#E4E4E4'; ctx.fillRect(ox+2,oy+2,o.w-4,o.h-4);
+      ctx.fillStyle = '#fff'; ctx.fillRect(ox+2,oy+2,o.w-4,o.h-4);
       ctx.globalAlpha = 1; continue;
     }
-    ctx.fillStyle = (o.flashTimer > 0 && Math.floor(o.flashTimer*20)%2===0) ? '#fff' : '#E4E4E4';
+    // flash при ударе — инверсия (обычно белый силуэт, при ударе мигает чёрным)
+    const flashing = o.flashTimer > 0 && Math.floor(o.flashTimer*20)%2===0;
+    ctx.fillStyle = flashing ? '#000' : '#fff';
     if (o.type==='crate') drawCrate(ox,oy);
     else if (o.type==='barrel') drawBarrel(ox,oy);
     else drawExpBarrel(ox,oy);
     if (o.type==='barrel' && o.hp < o.maxHP) {
-      ctx.fillStyle='#555'; ctx.fillRect(ox,oy-3,o.w,2);
-      ctx.fillStyle='#E4E4E4'; ctx.fillRect(ox,oy-3,Math.round(o.w*o.hp/o.maxHP),2);
+      ctx.fillStyle='#000'; ctx.fillRect(ox,oy-3,o.w,2);
+      ctx.fillStyle='#fff'; ctx.fillRect(ox,oy-3,Math.round(o.w*o.hp/o.maxHP),2);
     }
   }
 }
@@ -236,20 +241,25 @@ function initObjects() {
 function initItems() {
   items = [];
 
-  // бутылка — перед сложными участками (у пропастей и после группы врагов)
-  const bottlePoints = getSurfacePoints(p =>
-    p.distFromStart > 0.2 &&
+  // АПТЕЧКА — редкий ценный предмет. Максимум одна-две на уровень.
+  // Появляется только на дальней половине карты (не в начале) и не каждый раз.
+  const medkitPoints = getSurfacePoints(p =>
+    p.distFromStart > 0.35 &&
     p.distFromStart < 0.9
   );
-  // одна бутылка примерно каждые 10 тайлов
-  let lastBottleX = 0;
-  for (const pt of bottlePoints) {
-    if (pt.tx - lastBottleX < 8) continue;
-    // приоритет — перед пропастью или после врага
-    const priority = pt.nearPit ? 0.7 : 0.25;
-    if (Math.random() < priority) {
-      spawnItem(pt.tx, 'bottle');
-      lastBottleX = pt.tx;
+  let lastMedkitX = 0;
+  let medkitCount = 0;
+  const maxMedkits = 2; // максимум 2 аптечки на всю карту
+  // шанс появления снижен втрое, и минимальное расстояние больше
+  for (const pt of medkitPoints) {
+    if (medkitCount >= maxMedkits) break;
+    if (pt.tx - lastMedkitX < 20) continue;
+    // шанс только 8-20% в зависимости от опасности места
+    const chance = pt.nearPit ? 0.2 : 0.08;
+    if (Math.random() < chance) {
+      spawnItem(pt.tx, 'medkit');
+      lastMedkitX = pt.tx;
+      medkitCount++;
     }
   }
 
@@ -277,10 +287,12 @@ function initItems() {
 
 function applyPowerup(type) {
   const p = player;
-  if (type === 'bottle') {
-    if (p.lives < 5) { p.lives++; hudMessage = '+1 LIFE'; } else hudMessage = 'FULL HP';
-  } else { p.speedBoost = 5.0; hudMessage = 'SPEED!'; }
-  hudMessageTimer = 1.2;
+  if (type === 'medkit' || type === 'bottle') {
+    // Максимум 3 жизни. Аптечка восстанавливает одну.
+    if (p.lives < 3) { p.lives++; game.hudMessage = '+1 HP'; }
+    else game.hudMessage = 'FULL HP';
+  } else { p.speedBoost = 5.0; game.hudMessage = 'SPEED!'; }
+  game.hudMessageTimer = 1.2;
 }
 
 function updateItems(dt) {
@@ -292,24 +304,39 @@ function updateItems(dt) {
       item.collected = true; applyPowerup(item.type); playSound('pickup');
       for (let i = 0; i < 8; i++) {
         const ang = Math.random()*Math.PI*2;
-        particles.push({ x:item.x-cam+4, y:item.y+6, vx:Math.cos(ang)*30, vy:Math.sin(ang)*30-20, life:1, maxLife:0.3, size:1 });
+        particles.push({ x:item.x-game.cam+4, y:item.y+6, vx:Math.cos(ang)*30, vy:Math.sin(ang)*30-20, life:1, maxLife:0.3, size:1 });
       }
     }
   }
-  if (hudMessageTimer > 0) hudMessageTimer -= dt;
+  if (game.hudMessageTimer > 0) game.hudMessageTimer -= dt;
   updateObjects(dt);
 }
 
 function drawItems() {
   for (const item of items) {
     if (item.collected) continue;
-    const ix=Math.round(item.x-cam), iy=Math.round(item.y+Math.sin(item.bobT)*2);
+    const ix=Math.round(item.x-game.cam), iy=Math.round(item.y+Math.sin(item.bobT)*2);
     if (ix+item.w < 0 || ix > GW) continue;
-    ctx.fillStyle = '#E4E4E4';
+    if (item.type === 'medkit') {
+      // Белая коробка с чёрным крестом (аптечка)
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(ix, iy, 10, 10);
+      ctx.fillStyle = '#000';
+      // чёрная обводка 1px — подчёркивает форму
+      ctx.fillRect(ix, iy, 10, 1);
+      ctx.fillRect(ix, iy+9, 10, 1);
+      ctx.fillRect(ix, iy, 1, 10);
+      ctx.fillRect(ix+9, iy, 1, 10);
+      // крест в центре
+      ctx.fillRect(ix+4, iy+2, 2, 6); // вертикальная планка
+      ctx.fillRect(ix+2, iy+4, 6, 2); // горизонтальная планка
+      continue;
+    }
+    ctx.fillStyle = '#fff';
     const spr = item.type==='bottle' ? BOTTLE_SPR : CIG_SPR;
     for (const [sx,sy,sw] of spr) ctx.fillRect(ix+sx, iy+sy, sw, 1);
     if (item.type==='cigarette') {
-      const t = item.bobT; ctx.fillStyle = '#888';
+      const t = item.bobT; ctx.fillStyle = '#fff';
       for (let d = 0; d < 3; d++) {
         const dx2 = Math.round(Math.sin(t*1.5+d*0.8)*2);
         ctx.fillRect(ix+9+dx2, iy-2-d*2, 1, 1);

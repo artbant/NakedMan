@@ -16,16 +16,14 @@ const HOSTAGE_SPR = [
 ];
 
 let hostages = [];
-let rescuedHostages = 0;
 
 function initHostages() {
   hostages = [];
-  rescuedHostages = 0;
+  game.rescuedHostages = 0;
 
-  // 3-5 заложников на уровень
-  const count = rnd(3, 5);
+  // 5-8 заложников на удлинённую карту
+  const count = rnd(5, 8);
   const used = [];
-
   const candidates = getSurfacePoints(p =>
     p.open >= 2 &&
     p.distFromStart > 0.2 &&
@@ -56,6 +54,29 @@ function initHostages() {
       bobT: Math.random() * Math.PI * 2,
     });
   }
+  // фиксируем финальное количество для HUD (чтобы total не прыгал
+  // когда умершие сущности удаляются из массива)
+  game.hostagesTotal = hostages.length;
+}
+
+// Ручной спавн заложника на тайл-позиции — используется ASCII-парсером
+function spawnHostage(tx, ty) {
+  // Ищем пол под указанной клеткой
+  let footY = ty;
+  for (let y = ty; y < MH; y++) {
+    if (MAP[y] && MAP[y][tx]) { footY = y; break; }
+  }
+  hostages.push({
+    x: tx * T + 4,
+    y: footY * T - 16,
+    w: 8, h: 16,
+    vy: 0,
+    rescued: false,
+    dead: false,
+    deathTimer: 0,
+    bobT: Math.random() * Math.PI * 2,
+  });
+  game.hostagesTotal = (game.hostagesTotal || 0) + 1;
 }
 
 function updateHostages(dt) {
@@ -86,16 +107,16 @@ function updateHostages(dt) {
         p.x < h.x + h.w && p.x + p.w > h.x &&
         p.y < h.y + h.h && p.y + p.h > h.y) {
       h.rescued = true;
-      rescuedHostages++;
+      game.rescuedHostages++;
       playSound('rescue');
-      hudMessage = 'SAVED!';
+      game.hudMessage = 'SAVED!';
       say('rescue');
-      hudMessageTimer = 1.2;
+      game.hudMessageTimer = 1.2;
       // частицы радости
       for (let k = 0; k < 8; k++) {
         const ang = (k / 8) * Math.PI * 2;
         particles.push({
-          x: h.x - cam + 4, y: h.y + 8,
+          x: h.x - game.cam + 4, y: h.y + 8,
           vx: Math.cos(ang) * 30, vy: Math.sin(ang) * 30 - 20,
           life: 1, maxLife: 0.4, size: 2,
         });
@@ -112,7 +133,7 @@ function killHostage(hst) {
   for (let k = 0; k < 6; k++) {
     const ang = Math.random() * Math.PI * 2;
     particles.push({
-      x: hst.x - cam + 4, y: hst.y + 8,
+      x: hst.x - game.cam + 4, y: hst.y + 8,
       vx: Math.cos(ang) * 25, vy: Math.sin(ang) * 25 - 30,
       life: 1, maxLife: 0.35, size: 2,
     });
@@ -129,10 +150,10 @@ function checkHostageExplosion(cx, cy, radius) {
   }
 }
 
-function drawHostages(cam) {
+function drawHostages() {
   for (const h of hostages) {
     if (h.rescued) continue;
-    const hx = Math.round(h.x - cam);
+    const hx = Math.round(h.x - game.cam);
     const hy = Math.round(h.y + Math.sin(h.bobT) * 1.5);
     if (hx + h.w < 0 || hx > GW) continue;
 
@@ -148,11 +169,30 @@ function drawHostages(cam) {
     for (const [sx, sy, sw] of HOSTAGE_SPR)
       ctx.fillRect(hx + sx, hy + sy, sw, 1);
 
-    // мигающий восклицательный знак над головой
-    if (Math.floor(Date.now() / 400) % 2 === 0) {
+    // SAVE пузырь над головой
+    const blink = Math.floor(Date.now() / 500) % 2 === 0;
+    if (blink) {
+      // чёрная рамка (снаружи) для читаемости на белом дизеринге
+      ctx.fillStyle = '#000';
+      ctx.fillRect(hx - 7, hy - 13, 22, 10);
+      // белая заливка пузыря
       ctx.fillStyle = '#fff';
-      ctx.fillRect(hx + 3, hy - 6, 2, 4);
-      ctx.fillRect(hx + 3, hy - 1, 2, 2);
+      ctx.fillRect(hx - 6, hy - 12, 20, 8);
+      // текст SAVE пиксельный маленький
+      ctx.fillStyle = '#000';
+      // S
+      ctx.fillRect(hx-5, hy-11, 3, 1); ctx.fillRect(hx-5, hy-10, 1, 1);
+      ctx.fillRect(hx-5, hy-9, 3, 1); ctx.fillRect(hx-3, hy-8, 1, 1);
+      ctx.fillRect(hx-5, hy-7, 3, 1);
+      // A
+      ctx.fillRect(hx-1, hy-11, 3, 1); ctx.fillRect(hx-1, hy-10, 1, 1); ctx.fillRect(hx+1, hy-10, 1, 1);
+      ctx.fillRect(hx-1, hy-9, 3, 1); ctx.fillRect(hx-1, hy-8, 1, 1); ctx.fillRect(hx+1, hy-8, 1, 1);
+      ctx.fillRect(hx-1, hy-7, 1, 1); ctx.fillRect(hx+1, hy-7, 1, 1);
+      // хвостик пузыря (белый с чёрным контуром)
+      ctx.fillStyle = '#000';
+      ctx.fillRect(hx + 1, hy - 4, 4, 3);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(hx + 2, hy - 4, 2, 2);
     }
   }
 }

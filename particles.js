@@ -25,6 +25,11 @@ function updateParticles(dt) {
     q.life -= dt / q.maxLife;
     if (q.life <= 0) particles.splice(i, 1);
   }
+  // кэп — если переполнились каскадом взрывов, срезаем старейшие
+  const MAX_PARTICLES = 500;
+  if (particles.length > MAX_PARTICLES) {
+    particles.splice(0, particles.length - MAX_PARTICLES);
+  }
 }
 
 function drawParticles() {
@@ -40,7 +45,8 @@ function drawParticles() {
       }
     } else if (q.type === 'star') {
       if (a > 0.15) {
-        ctx.fillStyle = a > 0.6 ? '#fff' : '#E4E4E4';
+        ctx.globalAlpha = Math.min(1, a * 1.5);
+        ctx.fillStyle = '#fff';
         const px2 = Math.round(q.x), py2 = Math.round(q.y);
         ctx.fillRect(px2, py2 - 2, 1, 5);
         ctx.fillRect(px2 - 2, py2, 5, 1);
@@ -48,9 +54,11 @@ function drawParticles() {
       }
     } else {
       if (a > 0.1) {
-        ctx.fillStyle = a > 0.5 ? '#E4E4E4' : '#888';
+        ctx.globalAlpha = Math.min(1, a * 1.5);
+        ctx.fillStyle = '#fff';
         ctx.fillRect(Math.round(q.x), Math.round(q.y), q.size, q.size);
       }
     }
   }
+  ctx.globalAlpha = 1;
 }
