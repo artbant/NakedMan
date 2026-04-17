@@ -1,73 +1,58 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Nuked Man</title>
-<style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: #000;
-    height: 100%;
-    overflow: hidden;
-    touch-action: none;
-    -webkit-user-select: none;
-    user-select: none;
-  }
-  body {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  canvas {
-    image-rendering: pixelated;
-    image-rendering: -moz-crisp-edges;
-    image-rendering: crisp-edges;
-    width: 100vw;
-    height: auto;
-    max-height: 100vh;
-    display: block;
-    background: #000;
-  }
-  #touch {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-  }
-  .btn {
-    position: absolute;
-    bottom: 20px;
-    width: 70px;
-    height: 70px;
-    border: 2px solid #fff;
-    background: rgba(255,255,255,0.08);
-    color: #fff;
-    font-family: monospace;
-    font-size: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: auto;
-    border-radius: 8px;
-  }
-  #bL { left: 20px; }
-  #bR { left: 110px; }
-  #bJ { right: 20px; }
-  #bP { right: 110px; }
-  @media (hover: hover) and (pointer: fine) {
-    #touch { display: none; }
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Nuked Man</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; }
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      image-rendering: -moz-crisp-edges;
+      -ms-interpolation-mode: nearest-neighbor;
+      /* растягиваем на весь экран сохраняя пропорции 16:9 */
+      width: 100vw;
+      height: 56.25vw; /* 9/16 = 56.25% */
+      max-height: 100vh;
+      max-width: 177.78vh; /* 16/9 */
+    }
+    #kb { text-align: center; margin-top: 6px; font-size: 12px; color: #555; font-family: monospace; }
+    #mob { display: none; justify-content: space-between; align-items: center; padding: 6px 16px; margin-top: 6px; width: 100%; max-width: 960px; }
+    .btn { border-radius: 50%; border: 2px solid #555; background: rgba(255,255,255,0.08); color: #fff; touch-action: none; cursor: pointer; font-family: monospace; }
+  </style>
 </head>
 <body>
-  <canvas id="game" width="320" height="180"></canvas>
-  <div id="touch">
-    <div class="btn" id="bL">&lt;</div>
-    <div class="btn" id="bR">&gt;</div>
-    <div class="btn" id="bP">Z</div>
-    <div class="btn" id="bJ">^</div>
+  <canvas id="c"></canvas>
+  <div id="kb">← → движение &nbsp;|&nbsp; пробел / ↑ прыжок &nbsp;|&nbsp; Z удар</div>
+  <div id="mob">
+    <div style="display:flex;gap:10px;">
+      <button id="bl" class="btn" style="width:56px;height:56px;font-size:22px;">◀</button>
+      <button id="br" class="btn" style="width:56px;height:56px;font-size:22px;">▶</button>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button id="bp" class="btn" style="width:56px;height:56px;font-size:11px;">HIT</button>
+      <button id="bj" class="btn" style="width:56px;height:56px;font-size:11px;">JUMP</button>
+    </div>
   </div>
+
+  <!-- порядок важен: каждый файл может использовать то что объявлено раньше -->
+  <script src="constants.js"></script>
+  <script src="particles.js"></script>
+  <script src="map.js"></script>
+  <script src="player.js"></script>
+  <script src="enemies.js"></script>
+  <script src="items.js"></script>
+  <script src="hostages.js"></script>
+  <script src="hud.js"></script>
   <script src="game.js"></script>
+
+  <script>
+    ctx.imageSmoothingEnabled = false;
+    const observer = new ResizeObserver(() => { ctx.imageSmoothingEnabled = false; });
+    observer.observe(CV);
+  </script>
 </body>
 </html>
