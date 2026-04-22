@@ -325,14 +325,14 @@ function resetFirstEnemy() { _firstEnemySeen = false; }
 
 
 function spawnEnemy(tileX, startRow, type = 'patrol') {
-  // Увеличенные размеры для лучшей читаемости
+  // Увеличенные размеры — вдохновлено референсом (больше деталей)
   const dims = {
-    patrol:  { w: 18, h: 24 },   // было 12×16
-    guard:   { w: 16, h: 22 },   // было 10×14
-    runner:  { w: 16, h: 22 },   // было 12×16
-    flyer:   { w: 20, h: 14 },   // было 14×10
-    sniper:  { w: 14, h: 22 },   // было 10×14
-    bruiser: { w: 24, h: 30 },   // было 18×24
+    patrol:  { w: 22, h: 36 },
+    guard:   { w: 24, h: 30 },   // приземистый танк
+    runner:  { w: 14, h: 42 },   // тощий высокий
+    flyer:   { w: 28, h: 20 },   // крылатый
+    sniper:  { w: 18, h: 40 },   // балахонник
+    bruiser: { w: 32, h: 48 },   // монстр, 2 тайла в высоту
   };
   const { w, h } = dims[type] || dims.patrol;
 
@@ -1055,284 +1055,283 @@ function isBlinking(e) {
   return phase < 0.12; // первые 120мс каждого цикла — моргаем
 }
 
-// PATROL — 18×24, человечек с плоской шляпой, шагающий.
-// 3-кадровая анимация: 0 правая нога вперёд, 1 ноги вместе, 2 левая вперёд.
-// Корпус покачивается вверх на среднем кадре. Руки противоходом.
+// PATROL 22×36 — увеличенный человек с плоской шляпой
 function drawPatrol(ex, ey, flip, bodyCol, eyeCol, animT, worldX, worldY) {
   const step = Math.floor(animT * 8) % 3;
-  const bob = step === 1 ? -1 : 0; // вверх на среднем кадре
+  const bob = step === 1 ? -1 : 0;
   const ey2 = ey + bob;
 
   ctx.fillStyle = bodyCol;
-  // Шляпа — трапеция с широкими полями
-  ctx.fillRect(ex + 5, ey2, 8, 2);      // верх цилиндра
-  ctx.fillRect(ex + 2, ey2 + 2, 14, 1); // широкие поля шляпы
-  // Голова под шляпой
-  ctx.fillRect(ex + 5, ey2 + 3, 8, 5);
+  // Шляпа: узкая тулья + широкие поля
+  ctx.fillRect(ex + 8, ey2, 6, 2);
+  ctx.fillRect(ex + 7, ey2 + 2, 8, 1);
+  ctx.fillRect(ex + 2, ey2 + 3, 18, 2);
+  // Голова
+  ctx.fillRect(ex + 6, ey2 + 6, 10, 7);
   // Шея
-  ctx.fillRect(ex + 7, ey2 + 8, 4, 1);
-  // Туловище (корпус с плечами)
-  ctx.fillRect(ex + 3, ey2 + 9, 12, 2);  // плечи шире
-  ctx.fillRect(ex + 4, ey2 + 11, 10, 6); // тело
-  // Руки — противоход к ногам. step 0: правая нога вперёд → левая рука вперёд.
-  // В кадре "вместе" руки по бокам.
+  ctx.fillRect(ex + 9, ey2 + 13, 4, 1);
+  // Плечи/торс
+  ctx.fillRect(ex + 4, ey2 + 14, 14, 2);
+  ctx.fillRect(ex + 3, ey2 + 16, 16, 2);
+  ctx.fillRect(ex + 4, ey2 + 18, 14, 4);
+  ctx.fillRect(ex + 5, ey2 + 22, 12, 3);
+
+  // Руки
   if (step === 0) {
-    // левая рука вперёд (если flip=false — вперёд = справа игрока)
-    if (flip) {
-      ctx.fillRect(ex + 14, ey2 + 11, 2, 5); // задняя (справа от врага)
-      ctx.fillRect(ex + 1,  ey2 + 10, 2, 5); // передняя выше (машется)
-    } else {
-      ctx.fillRect(ex + 2,  ey2 + 11, 2, 5); // задняя (слева)
-      ctx.fillRect(ex + 15, ey2 + 10, 2, 5); // передняя
-    }
+    ctx.fillRect(ex + 1, ey2 + 15, 3, 8);
+    ctx.fillRect(ex + 18, ey2 + 14, 3, 7);
   } else if (step === 2) {
-    // зеркально
-    if (flip) {
-      ctx.fillRect(ex + 14, ey2 + 10, 2, 5);
-      ctx.fillRect(ex + 1,  ey2 + 11, 2, 5);
-    } else {
-      ctx.fillRect(ex + 2,  ey2 + 10, 2, 5);
-      ctx.fillRect(ex + 15, ey2 + 11, 2, 5);
-    }
+    ctx.fillRect(ex + 1, ey2 + 14, 3, 7);
+    ctx.fillRect(ex + 18, ey2 + 15, 3, 8);
   } else {
-    // ноги вместе — руки по бокам
-    ctx.fillRect(ex + 2,  ey2 + 11, 2, 5);
-    ctx.fillRect(ex + 15, ey2 + 11, 2, 5);
-  }
-  // Ноги — 3 кадра
-  if (step === 0) {
-    // правая нога вперёд
-    const frontX = flip ? ex + 3 : ex + 10;
-    const backX  = flip ? ex + 10 : ex + 3;
-    ctx.fillRect(frontX, ey2 + 17, 4, 7);
-    ctx.fillRect(backX,  ey2 + 17, 4, 5);
-    // ступни
-    ctx.fillRect(frontX - 1, ey2 + 23, 5, 1);
-    ctx.fillRect(backX,      ey2 + 21, 5, 1);
-  } else if (step === 2) {
-    const frontX = flip ? ex + 10 : ex + 3;
-    const backX  = flip ? ex + 3 : ex + 10;
-    ctx.fillRect(frontX, ey2 + 17, 4, 7);
-    ctx.fillRect(backX,  ey2 + 17, 4, 5);
-    ctx.fillRect(frontX - 1, ey2 + 23, 5, 1);
-    ctx.fillRect(backX,      ey2 + 21, 5, 1);
-  } else {
-    // ноги вместе
-    ctx.fillRect(ex + 4,  ey2 + 17, 4, 7);
-    ctx.fillRect(ex + 10, ey2 + 17, 4, 7);
-    ctx.fillRect(ex + 3,  ey2 + 23, 5, 1);
-    ctx.fillRect(ex + 10, ey2 + 23, 5, 1);
+    ctx.fillRect(ex + 1, ey2 + 14, 3, 9);
+    ctx.fillRect(ex + 18, ey2 + 14, 3, 9);
   }
 
-  // Глаза с трекингом — следят за игроком.
-  // Центры глаз: для flip=false на x+7 и x+11; для flip=true на x+6 и x+10
-  const blink = isBlinking({ _animT: animT });
-  const eyeY = ey2 + 5;
-  if (flip) {
-    drawEnemyEye(ex + 6, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
-    drawEnemyEye(ex + 9, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
+  // Ноги
+  if (step === 0) {
+    const frontX = flip ? ex + 5 : ex + 13;
+    const backX  = flip ? ex + 13 : ex + 5;
+    ctx.fillRect(frontX, ey2 + 25, 4, 10);
+    ctx.fillRect(backX,  ey2 + 25, 4, 8);
+    ctx.fillRect(frontX - 1, ey2 + 34, 6, 2);
+    ctx.fillRect(backX, ey2 + 32, 6, 2);
+  } else if (step === 2) {
+    const frontX = flip ? ex + 13 : ex + 5;
+    const backX  = flip ? ex + 5 : ex + 13;
+    ctx.fillRect(frontX, ey2 + 25, 4, 10);
+    ctx.fillRect(backX,  ey2 + 25, 4, 8);
+    ctx.fillRect(frontX - 1, ey2 + 34, 6, 2);
+    ctx.fillRect(backX, ey2 + 32, 6, 2);
   } else {
-    drawEnemyEye(ex + 9, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
-    drawEnemyEye(ex + 12, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
+    ctx.fillRect(ex + 6, ey2 + 25, 4, 10);
+    ctx.fillRect(ex + 13, ey2 + 25, 4, 10);
+    ctx.fillRect(ex + 4, ey2 + 34, 6, 2);
+    ctx.fillRect(ex + 13, ey2 + 34, 6, 2);
+  }
+
+  // Глаза
+  const blink = isBlinking({ _animT: animT });
+  const eyeY = ey2 + 9;
+  if (flip) {
+    drawEnemyEye(ex + 7, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
+    drawEnemyEye(ex + 10, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
+  } else {
+    drawEnemyEye(ex + 11, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
+    drawEnemyEye(ex + 14, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
   }
 }
 
-// GUARD — 16×22, с оружием сбоку. Замах → выстрел → отдача. 3 кадра шага.
+// GUARD 24×30 — приземистый танк в броне
 function drawGuard(ex, ey, flip, bodyCol, eyeCol, animT, alerted, windup, worldX, worldY) {
   const step = Math.floor(animT * 6) % 3;
   const bob = step === 1 ? -1 : 0;
   const ey2 = ey + bob;
 
   ctx.fillStyle = bodyCol;
-  // Голова (круглая, без шляпы)
-  ctx.fillRect(ex + 4, ey2, 8, 6);
-  ctx.fillRect(ex + 3, ey2 + 1, 10, 4);
-  // Шея-плечи
-  ctx.fillRect(ex + 3, ey2 + 6, 10, 3);
-  // Тело — броня
-  ctx.fillRect(ex + 2, ey2 + 9, 12, 8);
-  // Рука с оружием (впереди) — положение зависит от windup
-  // windup от 0 до 0.25: рука поднимается за 0.25с
+  // Голова в шлеме (8×7)
+  ctx.fillRect(ex + 8, ey2, 8, 7);
+  ctx.fillRect(ex + 7, ey2 + 1, 10, 5);
+  // Шея
+  ctx.fillRect(ex + 6, ey2 + 7, 12, 3);
+  // Широкие плечи-броня (22 px)
+  ctx.fillRect(ex + 1, ey2 + 10, 22, 4);
+  // Тело-броня
+  ctx.fillRect(ex + 3, ey2 + 14, 18, 8);
+  // Пояс
+  ctx.fillRect(ex + 4, ey2 + 22, 16, 2);
+
+  // Рука с оружием
   const armUp = Math.min(1, windup / 0.25);
   if (flip) {
-    const shoulderX = ex - 2;
-    const armY = Math.round(ey2 + 10 - armUp * 4);
-    ctx.fillRect(shoulderX, armY, 2, 5);
-    ctx.fillRect(shoulderX - 2, armY, 2, 2); // оружие
-    ctx.fillRect(ex + 14, ey2 + 10, 2, 5); // задняя рука
+    const armY = Math.round(ey2 + 16 - armUp * 6);
+    ctx.fillRect(ex - 3, armY, 3, 6);
+    ctx.fillRect(ex - 6, armY, 3, 3);
+    ctx.fillRect(ex + 21, ey2 + 16, 3, 6);
   } else {
-    const shoulderX = ex + 16;
-    const armY = Math.round(ey2 + 10 - armUp * 4);
-    ctx.fillRect(shoulderX, armY, 2, 5);
-    ctx.fillRect(shoulderX + 2, armY, 2, 2);
-    ctx.fillRect(ex, ey2 + 10, 2, 5);
-  }
-  // Ноги — 3 кадра
-  if (step === 0) {
-    const frontX = flip ? ex + 3 : ex + 10;
-    const backX  = flip ? ex + 10 : ex + 3;
-    ctx.fillRect(frontX, ey2 + 17, 3, 5);
-    ctx.fillRect(backX,  ey2 + 17, 3, 4);
-    ctx.fillRect(frontX - 1, ey2 + 21, 4, 1);
-    ctx.fillRect(backX,      ey2 + 20, 4, 1);
-  } else if (step === 2) {
-    const frontX = flip ? ex + 10 : ex + 3;
-    const backX  = flip ? ex + 3 : ex + 10;
-    ctx.fillRect(frontX, ey2 + 17, 3, 5);
-    ctx.fillRect(backX,  ey2 + 17, 3, 4);
-    ctx.fillRect(frontX - 1, ey2 + 21, 4, 1);
-    ctx.fillRect(backX,      ey2 + 20, 4, 1);
-  } else {
-    ctx.fillRect(ex + 3,  ey2 + 17, 3, 5);
-    ctx.fillRect(ex + 10, ey2 + 17, 3, 5);
-    ctx.fillRect(ex + 2,  ey2 + 21, 5, 1);
-    ctx.fillRect(ex + 9,  ey2 + 21, 5, 1);
+    const armY = Math.round(ey2 + 16 - armUp * 6);
+    ctx.fillRect(ex + 24, armY, 3, 6);
+    ctx.fillRect(ex + 27, armY, 3, 3);
+    ctx.fillRect(ex, ey2 + 16, 3, 6);
   }
 
-  // Глаза — в alerted прищуриваются, иначе нормальные
+  // Короткие ноги
+  if (step === 0) {
+    ctx.fillRect(ex + 6, ey2 + 24, 4, 6);
+    ctx.fillRect(ex + 14, ey2 + 24, 4, 5);
+    ctx.fillRect(ex + 5, ey2 + 29, 6, 1);
+    ctx.fillRect(ex + 13, ey2 + 28, 6, 1);
+  } else if (step === 2) {
+    ctx.fillRect(ex + 6, ey2 + 24, 4, 5);
+    ctx.fillRect(ex + 14, ey2 + 24, 4, 6);
+    ctx.fillRect(ex + 5, ey2 + 28, 6, 1);
+    ctx.fillRect(ex + 13, ey2 + 29, 6, 1);
+  } else {
+    ctx.fillRect(ex + 6, ey2 + 24, 4, 6);
+    ctx.fillRect(ex + 14, ey2 + 24, 4, 6);
+    ctx.fillRect(ex + 5, ey2 + 29, 6, 1);
+    ctx.fillRect(ex + 13, ey2 + 29, 6, 1);
+  }
+
   const blink = isBlinking({ _animT: animT + 1 });
   const eyeY = ey2 + 3;
   if (flip) {
-    drawEnemyEye(ex + 5, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, alerted, blink);
-    drawEnemyEye(ex + 8, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, alerted, blink);
+    drawEnemyEye(ex + 9, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, alerted, blink);
+    drawEnemyEye(ex + 13, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, alerted, blink);
   } else {
-    drawEnemyEye(ex + 8, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, alerted, blink);
     drawEnemyEye(ex + 11, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, alerted, blink);
+    drawEnemyEye(ex + 15, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, alerted, blink);
   }
 }
 
-// RUNNER — 16×22, тощий паникующий. Глаза огромные, следят за игроком.
+// RUNNER 14×42 — тощий высокий, большая голова, длинные ноги
 function drawRunner(ex, ey, flip, bodyCol, eyeCol, animT, worldX, worldY) {
-  const step = Math.floor(animT * 12) % 3; // быстрая анимация
-  const bob = step === 1 ? -2 : 0; // сильный прыжок-подскок (паника)
+  const step = Math.floor(animT * 12) % 3;
+  const bob = step === 1 ? -2 : 0;
   const ey2 = ey + bob;
 
   ctx.fillStyle = bodyCol;
-  // Голова — большая, округлая
-  ctx.fillRect(ex + 3, ey2, 10, 8);
-  ctx.fillRect(ex + 2, ey2 + 2, 12, 5);
-  // Шея
-  ctx.fillRect(ex + 6, ey2 + 8, 4, 2);
+  // Огромная голова (10×10)
+  ctx.fillRect(ex + 2, ey2, 10, 10);
+  ctx.fillRect(ex + 1, ey2 + 2, 12, 7);
+  // Тонкая шея
+  ctx.fillRect(ex + 6, ey2 + 10, 2, 3);
   // Узкое тело
-  ctx.fillRect(ex + 4, ey2 + 10, 8, 7);
-  // Руки раскинуты — больше при среднем кадре
-  const armSpread = step === 1 ? 2 : 0;
-  ctx.fillRect(ex - armSpread, ey2 + 10, 4, 2);
-  ctx.fillRect(ex + 12 + armSpread, ey2 + 10, 4, 2);
-  // Ноги — широкий шаг
+  ctx.fillRect(ex + 4, ey2 + 13, 6, 8);
+  // Руки раскинуты
+  const armSpread = step === 1 ? 3 : 0;
+  ctx.fillRect(ex - armSpread, ey2 + 13, 3, 3);
+  ctx.fillRect(ex + 11 + armSpread, ey2 + 13, 3, 3);
+  ctx.fillRect(ex - armSpread, ey2 + 16, 2, 5);
+  ctx.fillRect(ex + 12 + armSpread, ey2 + 16, 2, 5);
+
+  // Длинные тонкие ноги (17 px)
   if (step === 0) {
-    const frontX = flip ? ex + 3 : ex + 11;
-    const backX  = flip ? ex + 11 : ex + 3;
-    ctx.fillRect(frontX, ey2 + 17, 2, 5);
-    ctx.fillRect(backX,  ey2 + 17, 2, 3);
-    ctx.fillRect(frontX - 1, ey2 + 21, 3, 1);
-    ctx.fillRect(backX,      ey2 + 19, 3, 1);
+    const frontX = flip ? ex + 3 : ex + 9;
+    const backX  = flip ? ex + 9 : ex + 3;
+    ctx.fillRect(frontX, ey2 + 21, 2, 15);
+    ctx.fillRect(backX,  ey2 + 21, 2, 12);
+    ctx.fillRect(frontX - 1, ey2 + 36, 4, 2);
+    ctx.fillRect(backX, ey2 + 33, 4, 2);
   } else if (step === 2) {
-    const frontX = flip ? ex + 11 : ex + 3;
-    const backX  = flip ? ex + 3 : ex + 11;
-    ctx.fillRect(frontX, ey2 + 17, 2, 5);
-    ctx.fillRect(backX,  ey2 + 17, 2, 3);
-    ctx.fillRect(frontX - 1, ey2 + 21, 3, 1);
-    ctx.fillRect(backX,      ey2 + 19, 3, 1);
+    const frontX = flip ? ex + 9 : ex + 3;
+    const backX  = flip ? ex + 3 : ex + 9;
+    ctx.fillRect(frontX, ey2 + 21, 2, 15);
+    ctx.fillRect(backX,  ey2 + 21, 2, 12);
+    ctx.fillRect(frontX - 1, ey2 + 36, 4, 2);
+    ctx.fillRect(backX, ey2 + 33, 4, 2);
   } else {
-    ctx.fillRect(ex + 3,  ey2 + 17, 2, 5);
-    ctx.fillRect(ex + 11, ey2 + 17, 2, 5);
-    ctx.fillRect(ex + 2,  ey2 + 21, 3, 1);
-    ctx.fillRect(ex + 10, ey2 + 21, 3, 1);
+    ctx.fillRect(ex + 3, ey2 + 21, 2, 18);
+    ctx.fillRect(ex + 9, ey2 + 21, 2, 18);
+    ctx.fillRect(ex + 2, ey2 + 39, 4, 2);
+    ctx.fillRect(ex + 9, ey2 + 39, 4, 2);
   }
 
-  // Огромные глаза паники — следят за игроком. Зрачки 2×2 внутри глаза 3×3.
+  // Огромные паникующие глаза
   const blink = isBlinking({ _animT: animT + 2 });
   const eyeY = ey2 + 4;
   if (flip) {
-    drawEnemyEye(ex + 5, eyeY, worldX, worldY, 2, 1, bodyCol, eyeCol, false, blink);
-    drawEnemyEye(ex + 9, eyeY, worldX, worldY, 2, 1, bodyCol, eyeCol, false, blink);
+    drawEnemyEye(ex + 3, eyeY, worldX, worldY, 2, 1, bodyCol, eyeCol, false, blink);
+    drawEnemyEye(ex + 8, eyeY, worldX, worldY, 2, 1, bodyCol, eyeCol, false, blink);
   } else {
-    drawEnemyEye(ex + 6, eyeY, worldX, worldY, 2, 1, bodyCol, eyeCol, false, blink);
-    drawEnemyEye(ex + 11, eyeY, worldX, worldY, 2, 1, bodyCol, eyeCol, false, blink);
+    drawEnemyEye(ex + 5, eyeY, worldX, worldY, 2, 1, bodyCol, eyeCol, false, blink);
+    drawEnemyEye(ex + 10, eyeY, worldX, worldY, 2, 1, bodyCol, eyeCol, false, blink);
   }
 }
 
-// FLYER — 20×14, летающий. Машет крыльями, тело дышит.
+// FLYER 28×20 — большое летающее с размашистыми крыльями
 function drawFlyer(ex, ey, flip, bodyCol, eyeCol, animT, worldX, worldY) {
-  const wingFrame = Math.floor(animT * 14) % 3; // 3 кадра взмахов
-  const breath = Math.sin(animT * 6) * 0.5; // сжатие тела
+  const wingFrame = Math.floor(animT * 14) % 3;
+  const breath = Math.sin(animT * 6) * 0.5;
   ctx.fillStyle = bodyCol;
-  // Тело (овал)
-  const bh = Math.round(6 + breath);
-  const by = 4 + Math.floor((6 - bh) / 2);
-  ctx.fillRect(ex + 4, ey + by, 12, bh);
-  ctx.fillRect(ex + 6, ey + by - 1, 8, 1);
-  ctx.fillRect(ex + 6, ey + by + bh, 8, 1);
-  // Хвост сзади
-  ctx.fillRect(flip ? ex + 15 : ex + 2, ey + 6, 3, 2);
+  // Тело в центре (10×8)
+  const bh = Math.round(7 + breath);
+  const by = 7 + Math.floor((7 - bh) / 2);
+  ctx.fillRect(ex + 9, ey + by, 10, bh);
+  ctx.fillRect(ex + 10, ey + by - 1, 8, 1);
+  ctx.fillRect(ex + 10, ey + by + bh, 8, 1);
+  // Хвост
+  ctx.fillRect(flip ? ex + 22 : ex + 4, ey + 10, 4, 3);
   // Крылья
   if (wingFrame === 0) {
-    ctx.fillRect(ex + 2, ey, 3, 2);
-    ctx.fillRect(ex + 4, ey + 2, 2, 1);
-    ctx.fillRect(ex + 15, ey, 3, 2);
-    ctx.fillRect(ex + 14, ey + 2, 2, 1);
+    // вверх
+    ctx.fillRect(ex, ey, 8, 3);
+    ctx.fillRect(ex + 3, ey + 3, 6, 3);
+    ctx.fillRect(ex + 6, ey + 6, 4, 1);
+    ctx.fillRect(ex + 20, ey, 8, 3);
+    ctx.fillRect(ex + 19, ey + 3, 6, 3);
+    ctx.fillRect(ex + 18, ey + 6, 4, 1);
   } else if (wingFrame === 1) {
-    ctx.fillRect(ex, ey + 4, 4, 2);
-    ctx.fillRect(ex + 16, ey + 4, 4, 2);
+    // горизонтально — полный размах
+    ctx.fillRect(ex, ey + 8, 10, 4);
+    ctx.fillRect(ex + 2, ey + 6, 7, 2);
+    ctx.fillRect(ex + 18, ey + 8, 10, 4);
+    ctx.fillRect(ex + 19, ey + 6, 7, 2);
   } else {
-    ctx.fillRect(ex + 2, ey + 10, 3, 2);
-    ctx.fillRect(ex + 4, ey + 9, 2, 1);
-    ctx.fillRect(ex + 15, ey + 10, 3, 2);
-    ctx.fillRect(ex + 14, ey + 9, 2, 1);
+    // вниз
+    ctx.fillRect(ex, ey + 14, 8, 3);
+    ctx.fillRect(ex + 3, ey + 12, 6, 2);
+    ctx.fillRect(ex + 6, ey + 10, 4, 2);
+    ctx.fillRect(ex + 20, ey + 14, 8, 3);
+    ctx.fillRect(ex + 19, ey + 12, 6, 2);
+    ctx.fillRect(ex + 18, ey + 10, 4, 2);
   }
-  // Глаза впереди — с трекингом
+  // Глаза
   const blink = isBlinking({ _animT: animT + 4 });
-  const eyeY = ey + 7;
+  const eyeY = ey + 10;
   if (flip) {
-    drawEnemyEye(ex + 5, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
-    drawEnemyEye(ex + 8, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
+    drawEnemyEye(ex + 10, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
+    drawEnemyEye(ex + 14, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
   } else {
-    drawEnemyEye(ex + 12, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
-    drawEnemyEye(ex + 15, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
+    drawEnemyEye(ex + 14, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
+    drawEnemyEye(ex + 18, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, false, blink);
   }
 }
 
-// SNIPER — 14×22, вытянутый. Прицел-луч рисуется отдельно.
+// SNIPER 18×40 — высокий балахонник до земли
 function drawSniper(ex, ey, flip, bodyCol, eyeCol, animT, alerted, aimT, worldX, worldY) {
   ctx.fillStyle = bodyCol;
-  // Капюшон — пирамидка сверху
-  ctx.fillRect(ex + 4, ey, 6, 1);
-  ctx.fillRect(ex + 3, ey + 1, 8, 2);
-  // Голова под капюшоном
-  ctx.fillRect(ex + 3, ey + 3, 8, 5);
-  // Длинное узкое тело
-  ctx.fillRect(ex + 3, ey + 8, 8, 10);
-  // Руки — держит винтовку
-  if (flip) {
-    ctx.fillRect(ex - 3, ey + 9, 3, 2);
-    ctx.fillRect(ex + 11, ey + 11, 2, 4);
-  } else {
-    ctx.fillRect(ex + 14, ey + 9, 3, 2);
-    ctx.fillRect(ex + 1, ey + 11, 2, 4);
-  }
-  // Винтовка
-  if (flip) {
-    ctx.fillRect(ex - 7, ey + 9, 4, 1);
-    ctx.fillRect(ex - 5, ey + 10, 2, 1);
-  } else {
-    ctx.fillRect(ex + 17, ey + 9, 4, 1);
-    ctx.fillRect(ex + 15, ey + 10, 2, 1);
-  }
-  // Ноги (статичные)
-  ctx.fillRect(ex + 3, ey + 18, 3, 4);
-  ctx.fillRect(ex + 8, ey + 18, 3, 4);
+  // Острый верх капюшона
+  ctx.fillRect(ex + 8, ey, 2, 2);
+  ctx.fillRect(ex + 7, ey + 2, 4, 1);
+  ctx.fillRect(ex + 6, ey + 3, 6, 2);
+  ctx.fillRect(ex + 5, ey + 5, 8, 2);
+  // Тень в капюшоне (лицо)
+  ctx.fillRect(ex + 4, ey + 7, 10, 6);
+  // Плечи балахона
+  ctx.fillRect(ex + 2, ey + 13, 14, 3);
+  ctx.fillRect(ex + 1, ey + 16, 16, 2);
+  // Длинный балахон до земли — расширяется
+  ctx.fillRect(ex + 1, ey + 18, 16, 5);
+  ctx.fillRect(ex, ey + 23, 18, 5);
+  ctx.fillRect(ex, ey + 28, 18, 7);
+  // Бахрома снизу
+  ctx.fillRect(ex, ey + 35, 3, 3);
+  ctx.fillRect(ex + 4, ey + 35, 3, 4);
+  ctx.fillRect(ex + 8, ey + 35, 2, 3);
+  ctx.fillRect(ex + 11, ey + 35, 3, 4);
+  ctx.fillRect(ex + 15, ey + 35, 3, 3);
 
-  // Один светящийся глаз под капюшоном — с трекингом (побольше зрачок при alerted)
+  // Рука с винтовкой
+  if (flip) {
+    ctx.fillRect(ex - 4, ey + 17, 4, 3);
+    ctx.fillRect(ex - 9, ey + 17, 5, 2);
+    ctx.fillRect(ex - 6, ey + 19, 3, 1);
+  } else {
+    ctx.fillRect(ex + 18, ey + 17, 4, 3);
+    ctx.fillRect(ex + 22, ey + 17, 5, 2);
+    ctx.fillRect(ex + 19, ey + 19, 3, 1);
+  }
+
+  // Глаз в капюшоне
   const blink = isBlinking({ _animT: animT + 5 });
-  const pupilR = alerted ? 1 : 1;
-  drawEnemyEye(flip ? ex + 4 : ex + 9, ey + 5,
-               worldX, worldY, alerted ? 2 : 1, pupilR, bodyCol, eyeCol, false, blink);
+  drawEnemyEye(flip ? ex + 5 : ex + 12, ey + 9,
+               worldX, worldY, alerted ? 2 : 1, 1, bodyCol, eyeCol, false, blink);
 
-  // ПРИЦЕЛЬНЫЙ ЛУЧ
+  // Прицельный луч
   if (aimT > 0) {
-    const muzX = flip ? ex - 5 : ex + 19;
-    const muzY = ey + 10;
+    const muzX = flip ? ex - 8 : ex + 26;
+    const muzY = ey + 19;
     const plX = player.x + player.w/2 - game.cam;
     const plY = player.y + player.h/2;
     const dx = plX - muzX;
@@ -1350,64 +1349,62 @@ function drawSniper(ex, ey, flip, bodyCol, eyeCol, animT, alerted, aimT, worldX,
   }
 }
 
-// BRUISER — 24×30, массивный. Медленный тяжёлый шаг. 3 кадра.
+// BRUISER 28×32 — колоссальный, маленькая голова на массивном корпусе.
 function drawBruiser(ex, ey, flip, bodyCol, eyeCol, animT, worldX, worldY) {
-  const step = Math.floor(animT * 3) % 3; // очень медленный
+  const step = Math.floor(animT * 3) % 3;
   const bob = step === 1 ? -1 : 0;
   const ey2 = ey + bob;
 
   ctx.fillStyle = bodyCol;
-  // Голова
-  ctx.fillRect(ex + 6, ey2, 12, 8);
-  ctx.fillRect(ex + 5, ey2 + 1, 14, 6);
-  // Шея
-  ctx.fillRect(ex + 8, ey2 + 8, 8, 2);
-  // Плечи
-  ctx.fillRect(ex + 1, ey2 + 10, 22, 5);
-  // Туловище
-  ctx.fillRect(ex + 3, ey2 + 15, 18, 10);
-  // Руки — качаются противоходом к ногам
-  let armLeft = 0, armRight = 0;
-  if (step === 0) { armLeft = -1; armRight = 1; }
-  else if (step === 2) { armLeft = 1; armRight = -1; }
-  ctx.fillRect(ex, ey2 + 12 + armLeft, 3, 10);
-  ctx.fillRect(ex + 21, ey2 + 12 + armRight, 3, 10);
+  // Маленькая голова (12×8) на большом теле — непропорционально
+  ctx.fillRect(ex + 10, ey2, 12, 8);
+  ctx.fillRect(ex + 9, ey2 + 1, 14, 6);
+  // Толстая шея
+  ctx.fillRect(ex + 12, ey2 + 8, 8, 3);
+  // ОГРОМНЫЕ плечи (32 px — шире всего тела)
+  ctx.fillRect(ex, ey2 + 11, 32, 7);
+  // Массивное тело
+  ctx.fillRect(ex + 3, ey2 + 18, 26, 16);
+  // Пояс
+  ctx.fillRect(ex + 4, ey2 + 34, 24, 2);
+  // Мускулистые руки
+  let armL = 0, armR = 0;
+  if (step === 0) { armL = -1; armR = 1; }
+  else if (step === 2) { armL = 1; armR = -1; }
+  ctx.fillRect(ex - 2, ey2 + 15 + armL, 5, 20);
+  ctx.fillRect(ex + 29, ey2 + 15 + armR, 5, 20);
   // Кулаки
-  ctx.fillRect(ex - 1, ey2 + 21 + armLeft, 4, 3);
-  ctx.fillRect(ex + 21, ey2 + 21 + armRight, 4, 3);
-  // Ноги
+  ctx.fillRect(ex - 3, ey2 + 33 + armL, 7, 6);
+  ctx.fillRect(ex + 29, ey2 + 33 + armR, 7, 6);
+  // Мощные ноги
   if (step === 0) {
-    const frontX = flip ? ex + 5 : ex + 14;
-    const backX  = flip ? ex + 14 : ex + 5;
-    ctx.fillRect(frontX, ey2 + 25, 5, 5);
-    ctx.fillRect(backX,  ey2 + 25, 5, 3);
-    ctx.fillRect(frontX - 1, ey2 + 29, 7, 1);
-    ctx.fillRect(backX,      ey2 + 28, 7, 1);
+    ctx.fillRect(ex + 7, ey2 + 36, 7, 11);
+    ctx.fillRect(ex + 18, ey2 + 36, 7, 10);
+    ctx.fillRect(ex + 6, ey2 + 46, 9, 2);
+    ctx.fillRect(ex + 17, ey2 + 45, 9, 2);
   } else if (step === 2) {
-    const frontX = flip ? ex + 14 : ex + 5;
-    const backX  = flip ? ex + 5 : ex + 14;
-    ctx.fillRect(frontX, ey2 + 25, 5, 5);
-    ctx.fillRect(backX,  ey2 + 25, 5, 3);
-    ctx.fillRect(frontX - 1, ey2 + 29, 7, 1);
-    ctx.fillRect(backX,      ey2 + 28, 7, 1);
+    ctx.fillRect(ex + 7, ey2 + 36, 7, 10);
+    ctx.fillRect(ex + 18, ey2 + 36, 7, 11);
+    ctx.fillRect(ex + 6, ey2 + 45, 9, 2);
+    ctx.fillRect(ex + 17, ey2 + 46, 9, 2);
   } else {
-    ctx.fillRect(ex + 5,  ey2 + 25, 5, 5);
-    ctx.fillRect(ex + 14, ey2 + 25, 5, 5);
-    ctx.fillRect(ex + 4,  ey2 + 29, 7, 1);
-    ctx.fillRect(ex + 13, ey2 + 29, 7, 1);
+    ctx.fillRect(ex + 7, ey2 + 36, 7, 11);
+    ctx.fillRect(ex + 18, ey2 + 36, 7, 11);
+    ctx.fillRect(ex + 6, ey2 + 46, 9, 2);
+    ctx.fillRect(ex + 17, ey2 + 46, 9, 2);
   }
-  // Морщина над глазами (всегда нахмурен)
-  ctx.fillStyle = bodyCol; // поверх лица
-  ctx.fillRect(ex + 6, ey2 + 2, 12, 1);
-  // Глаза — маленькие злые, следят за игроком. Прищурены.
+  // Нахмуренная бровь
+  ctx.fillStyle = bodyCol;
+  ctx.fillRect(ex + 10, ey2 + 2, 12, 1);
+  // Маленькие злые глаза
   const blink = isBlinking({ _animT: animT + 3 });
   const eyeY = ey2 + 4;
   if (flip) {
-    drawEnemyEye(ex + 8, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, true, blink);
-    drawEnemyEye(ex + 13, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, true, blink);
+    drawEnemyEye(ex + 12, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, true, blink);
+    drawEnemyEye(ex + 17, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, true, blink);
   } else {
-    drawEnemyEye(ex + 11, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, true, blink);
-    drawEnemyEye(ex + 16, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, true, blink);
+    drawEnemyEye(ex + 14, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, true, blink);
+    drawEnemyEye(ex + 19, eyeY, worldX, worldY, 1, 1, bodyCol, eyeCol, true, blink);
   }
 }
 

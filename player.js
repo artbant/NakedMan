@@ -1,18 +1,16 @@
 // NUKED MAN — player.js
-// Голый мужик в шляпе. Вид СО СПИНЫ — всегда повёрнут к нам задом.
-// bbox 15×24 px. Анатомия (вид сзади):
-//   Шляпа: y=0-3 (круглая макушка + круглые поля)
-//   Голова: y=4-8 (без лица, без глаз — только затылок)
-//   Плечи/торс: y=9-14
-//   Поясница: y=15
-//   Задница: y=16-18 (две округлости)
-//   Ноги: y=18-22
-//   Ступни: y=23
-//   ХЕР: 1-2 px между ног на уровне y=18-20, болтается при беге
+// Голый мужик в шляпе. Вид со спины в idle/jump/punch, в профиль при беге.
+// bbox 18×36 px. Анатомия:
+//   Шляпа: y=0-5 (тулья + промежуток + поля)
+//   Голова: y=7-11
+//   Плечи/торс: y=13-22
+//   Попа: y=23-26
+//   Ноги: y=27-33
+//   Ступни: y=34-35
 
 const player = {
   x: 2 * 24 + 4, y: 0,
-  vx: 0, vy: 0, w: 15, h: 24,
+  vx: 0, vy: 0, w: 18, h: 36,
   onGround: false, facing: 1,
   lives: 3, dead: false, dtimer: 0,
   state: 'idle', frame: 0, ftick: 0, bobt: 0, bobY: 0,
@@ -25,112 +23,111 @@ const player = {
 
 const START = { x: 2 * 24 + 4, y: 0 };
 
-// ── ПРИМИТИВЫ ─────────────────────────────────────────────────────────
+// ── ПРИМИТИВЫ (вид со спины) ──────────────────────────────────────────
 
-// Шляпа со спины — узкая высокая тулья + широкие поля с промежутком
+// Шляпа — два яруса с промежутком
 function drawHat(px, py) {
   ctx.fillStyle = '#fff';
-  // Верхняя тулья — узкая, высокая: 3×3 по центру
-  ctx.fillRect(px + 6, py, 3, 3);
-  // Поля — широкие, отдельно внизу, с промежутком
-  ctx.fillRect(px + 1, py + 3, 13, 1);
+  // Тулья 4×2
+  ctx.fillRect(px + 7, py, 4, 2);
+  ctx.fillRect(px + 6, py + 2, 6, 1);
+  // Поля (широкие)
+  ctx.fillRect(px + 3, py + 3, 12, 1);
+  ctx.fillRect(px, py + 4, 18, 2);
 }
 
-// Голова со спины — только затылок, без глаз.
+// Голова со спины — овал, без лица
 function drawHeadBack(px, py, squash) {
-  const headH = Math.max(3, Math.round(5 * squash));
+  const headH = Math.max(4, Math.round(5 * squash));
   const headYofs = 5 - headH;
   ctx.fillStyle = '#fff';
-  // Затылок — овал 9×headH
-  ctx.fillRect(px + 3, py + 4 + headYofs, 9, headH);
+  ctx.fillRect(px + 3, py + 7 + headYofs, 12, headH);
 }
 
-// Торс со спины — плечи + грудная клетка + талия
-// Явное сужение силуэта к поясу — как у твоего эскиза
+// Торс со спины — плечи расширяются, талия сужается
 function drawTorsoBack(px, py, bendX) {
   ctx.fillStyle = '#fff';
-  // y=9: плечи (13 широких)
-  ctx.fillRect(px + 1 + bendX, py + 9, 13, 1);
-  // y=10: плечи (самые широкие 15)
-  ctx.fillRect(px + bendX, py + 10, 15, 1);
-  // y=11: грудная клетка (13 px)
-  ctx.fillRect(px + 1 + bendX, py + 11, 13, 1);
-  // y=12: сужение (11 px)
-  ctx.fillRect(px + 2 + bendX, py + 12, 11, 1);
-  // y=13: талия (9 px)
-  ctx.fillRect(px + 3 + bendX, py + 13, 9, 1);
-  // y=14: талия (9 px)
-  ctx.fillRect(px + 3 + bendX, py + 14, 9, 1);
+  // y=13: плечи начинаются (12 px)
+  ctx.fillRect(px + 3 + bendX, py + 13, 12, 1);
+  // y=14-15: плечи на максимум (16 px, края)
+  ctx.fillRect(px + 1 + bendX, py + 14, 16, 2);
+  // y=16-17: грудная клетка (14 px)
+  ctx.fillRect(px + 2 + bendX, py + 16, 14, 2);
+  // y=18-20: сужение к талии (12 → 10)
+  ctx.fillRect(px + 3 + bendX, py + 18, 12, 1);
+  ctx.fillRect(px + 4 + bendX, py + 19, 10, 1);
+  ctx.fillRect(px + 4 + bendX, py + 20, 10, 1);
+  // y=21-22: талия (10 px)
+  ctx.fillRect(px + 4 + bendX, py + 21, 10, 2);
 }
 
-// Задница — расширяется от узкой талии. Две круглых ягодицы с V-разрезом.
+// Задница — V-образный разрез
 function drawButt(px, py) {
   ctx.fillStyle = '#fff';
-  // y=15: расширение после талии — широкий пояс (13 px)
-  ctx.fillRect(px + 1, py + 15, 13, 1);
-  // y=16: попа начинает округляться, появляется узкий разрез в центре (1 px)
-  ctx.fillRect(px + 1, py + 16, 6, 1);
-  ctx.fillRect(px + 8, py + 16, 6, 1);
-  // y=17: разрез расширяется до 3 px (V)
-  ctx.fillRect(px + 2, py + 17, 4, 1);
-  ctx.fillRect(px + 9, py + 17, 4, 1);
-  // Чёрные точки V-разреза
+  // y=23: расширение после талии
+  ctx.fillRect(px + 2, py + 23, 14, 1);
+  // y=24: ягодицы с узким разрезом в центре (2 px)
+  ctx.fillRect(px + 2, py + 24, 7, 1);
+  ctx.fillRect(px + 9, py + 24, 7, 1);
+  // y=25: разрез шире (3 px)
+  ctx.fillRect(px + 2, py + 25, 6, 1);
+  ctx.fillRect(px + 10, py + 25, 6, 1);
+  // y=26: разрез ещё шире (4 px)
+  ctx.fillRect(px + 3, py + 26, 5, 1);
+  ctx.fillRect(px + 10, py + 26, 5, 1);
+  // V-разрез (чёрные тени)
   ctx.fillStyle = '#000';
-  ctx.fillRect(px + 7, py + 16, 1, 1);   // узкая вершина
-  ctx.fillRect(px + 6, py + 17, 3, 1);   // расширение
+  ctx.fillRect(px + 8, py + 24, 1, 1);
+  ctx.fillRect(px + 8, py + 25, 2, 1);
+  ctx.fillRect(px + 8, py + 26, 2, 1);
 }
 
-// Ноги — обе видны, каждая 2 пикселя шириной. Между ними зазор.
-// step: -1/0/+1 определяет кадр "бега" (при виде со спины тоже применимо)
+// Ноги — 2 px шириной каждая, с зазором
 function drawLegs(px, py, step) {
   ctx.fillStyle = '#fff';
-  // Левая нога x=4-5, правая x=9-10. Зазор между ними x=6-8 (3 пикс).
   if (step === 0) {
-    // стоят ровно
-    ctx.fillRect(px + 4, py + 18, 2, 5);
-    ctx.fillRect(px + 9, py + 18, 2, 5);
+    // стоят ровно — обе ноги одинаково
+    ctx.fillRect(px + 4, py + 27, 3, 7);
+    ctx.fillRect(px + 11, py + 27, 3, 7);
     // ступни
-    ctx.fillRect(px + 3, py + 23, 3, 1);
-    ctx.fillRect(px + 9, py + 23, 3, 1);
+    ctx.fillRect(px + 3, py + 34, 5, 2);
+    ctx.fillRect(px + 10, py + 34, 5, 2);
   } else if (step === 1) {
     // правая приподнята
-    ctx.fillRect(px + 4, py + 18, 2, 5);
-    ctx.fillRect(px + 9, py + 18, 2, 4);
-    ctx.fillRect(px + 3, py + 23, 3, 1);
-    ctx.fillRect(px + 9, py + 22, 3, 1);
+    ctx.fillRect(px + 4, py + 27, 3, 7);
+    ctx.fillRect(px + 11, py + 27, 3, 6);
+    ctx.fillRect(px + 3, py + 34, 5, 2);
+    ctx.fillRect(px + 10, py + 33, 5, 2);
   } else {
-    ctx.fillRect(px + 4, py + 18, 2, 4);
-    ctx.fillRect(px + 9, py + 18, 2, 5);
-    ctx.fillRect(px + 3, py + 22, 3, 1);
-    ctx.fillRect(px + 9, py + 23, 3, 1);
+    ctx.fillRect(px + 4, py + 27, 3, 6);
+    ctx.fillRect(px + 11, py + 27, 3, 7);
+    ctx.fillRect(px + 3, py + 33, 5, 2);
+    ctx.fillRect(px + 10, py + 34, 5, 2);
   }
 }
 
-// ХЕР — 1 пиксель в зазоре между ногами. swing: фаза болтания (-1..+1)
+// ХЕР — в зазоре между ногами
 function drawDick(px, py, swing) {
   ctx.fillStyle = '#fff';
   const dx = Math.round(swing);
-  // Зазор между ног на x=6-8, ставим по центру x=7
-  ctx.fillRect(px + 7 + dx, py + 18, 1, 2);
+  ctx.fillRect(px + 8 + dx, py + 27, 2, 3);
 }
 
-// Руки по бокам — свисают сверху плеч до талии
+// Руки — свисают по бокам
 function drawArmsDown(px, py) {
   ctx.fillStyle = '#fff';
-  // Левая и правая — 2×6, от y=10 до y=15
-  ctx.fillRect(px, py + 10, 2, 6);
-  ctx.fillRect(px + 13, py + 10, 2, 6);
+  ctx.fillRect(px, py + 14, 2, 9);
+  ctx.fillRect(px + 16, py + 14, 2, 9);
 }
 
 function drawArmsSwinging(px, py, step) {
   ctx.fillStyle = '#fff';
   if (step === 1) {
-    // одна рука впереди (в bendX), другая сзади
-    ctx.fillRect(px, py + 9, 2, 4);
-    ctx.fillRect(px + 13, py + 11, 2, 5);
+    ctx.fillRect(px, py + 13, 2, 8);
+    ctx.fillRect(px + 16, py + 15, 2, 9);
   } else if (step === -1) {
-    ctx.fillRect(px, py + 11, 2, 5);
-    ctx.fillRect(px + 13, py + 9, 2, 4);
+    ctx.fillRect(px, py + 15, 2, 9);
+    ctx.fillRect(px + 16, py + 13, 2, 8);
   } else {
     drawArmsDown(px, py);
   }
@@ -138,102 +135,43 @@ function drawArmsSwinging(px, py, step) {
 
 // ── ПОЗЫ ──────────────────────────────────────────────────────────────
 
-// drawPoseIdle — точный перенос SVG-эскиза пользователя (stay.svg, 15×24).
-// Анатомия:
-//   Шляпа: y=0-3 (четыре яруса: поля вверху, дуга, широкие поля, самая широкая линия)
-//   Голова: y=5-7 (9×3 со скруглением)
-//   Плечи/торс: y=9-11 (9→11→13 расширение)
-//   Руки: y=12-16 (отдельные стойки по 1 px с зазором от тела)
-//   Торс: y=12-16 (9 px шириной)
-//   Попа + V-разрез: y=15-18
-//   Ноги: y=19-22 (1 px шириной каждая)
-//   Ступни: y=23 (2 px расширены наружу)
 function drawPoseIdle(px, py, flip, t) {
   const bob = Math.round(Math.sin(t * 2) * 0.3);
-  const y = py + bob;
-  ctx.fillStyle = '#fff';
-  // y=0: поля шляпы (7 px по центру) — 4-10
-  ctx.fillRect(px + 4, y, 7, 1);
-  // y=1: дуга полей (края)
-  ctx.fillRect(px + 3, y + 1, 3, 1);
-  ctx.fillRect(px + 9, y + 1, 3, 1);
-  // y=2: нижняя часть (9 px)
-  ctx.fillRect(px + 3, y + 2, 9, 1);
-  // y=3: самая широкая (15 px)
-  ctx.fillRect(px, y + 3, 15, 1);
-  // y=5-6: голова (9×2)
-  ctx.fillRect(px + 3, y + 5, 9, 2);
-  // y=7: низ головы (7 px, скруглён)
-  ctx.fillRect(px + 4, y + 7, 7, 1);
-  // y=9: плечи (9 px)
-  ctx.fillRect(px + 3, y + 9, 9, 1);
-  // y=10: плечи шире (11)
-  ctx.fillRect(px + 2, y + 10, 11, 1);
-  // y=11: плечи максимум (13)
-  ctx.fillRect(px + 1, y + 11, 13, 1);
-  // y=12-14: руки по бокам (1 px стойки) + торс с зазором
-  for (let row = 12; row <= 14; row++) {
-    ctx.fillRect(px + 1, y + row, 1, 1);       // левая рука
-    ctx.fillRect(px + 3, y + row, 9, 1);       // торс (9 px)
-    ctx.fillRect(px + 13, y + row, 1, 1);      // правая рука
-  }
-  // y=15: попа начинается — `..##.###.##..` → 2 сегмента + центр
-  ctx.fillRect(px + 3, y + 15, 2, 1);   // левая ягодица (верх)
-  ctx.fillRect(px + 6, y + 15, 3, 1);   // центр (соединяющий мост)
-  ctx.fillRect(px + 10, y + 15, 2, 1);  // правая ягодица (верх)
-  // y=16: `.#.###.#.###.#.` — руки + попа с тонким центральным разрезом
-  ctx.fillRect(px + 1, y + 16, 1, 1);         // левая рука
-  ctx.fillRect(px + 3, y + 16, 3, 1);         // левая ягодица
-  ctx.fillRect(px + 7, y + 16, 1, 1);         // центральный мост
-  ctx.fillRect(px + 9, y + 16, 3, 1);         // правая ягодица
-  ctx.fillRect(px + 13, y + 16, 1, 1);        // правая рука
-  // y=17: `...####.####...` — попа с чётким разрезом
-  ctx.fillRect(px + 3, y + 17, 4, 1);
-  ctx.fillRect(px + 8, y + 17, 4, 1);
-  // y=18: та же попа
-  ctx.fillRect(px + 3, y + 18, 4, 1);
-  ctx.fillRect(px + 8, y + 18, 4, 1);
-  // y=19: ноги сходятся — `...###...###...`
-  ctx.fillRect(px + 3, y + 19, 3, 1);
-  ctx.fillRect(px + 9, y + 19, 3, 1);
-  // y=20-22: тонкие ноги по 1 px каждая
-  for (let row = 20; row <= 22; row++) {
-    ctx.fillRect(px + 3, y + row, 1, 1);
-    ctx.fillRect(px + 11, y + row, 1, 1);
-  }
-  // y=23: ступни (2 px расширены наружу)
-  ctx.fillRect(px + 2, y + 23, 2, 1);
-  ctx.fillRect(px + 11, y + 23, 2, 1);
+  drawHat(px, py + bob);
+  drawHeadBack(px, py + bob, 1);
+  drawTorsoBack(px, py + bob, 0);
+  drawArmsDown(px, py + bob);
+  drawButt(px, py);
+  drawLegs(px, py, 0);
+  drawDick(px, py, Math.sin(t * 2) * 0.5);
 
-  // Если курит — рука поднята к голове + сигарета + дым
+  // Курение — рука поднята к голове с сигаретой
   if (player._smoking) {
-    // Стираем правую свисающую руку (y=12-16 x=13)
+    // Стираем правую свисающую руку
     ctx.fillStyle = '#000';
-    for (let row = 12; row <= 16; row++) ctx.fillRect(px + 13, y + row, 1, 1);
-    // Рисуем поднятую руку: плечо → вверх → к голове
+    ctx.fillRect(px + 16, py + bob + 14, 2, 9);
+    // Рисуем поднятую руку согнутую
     ctx.fillStyle = '#fff';
-    const handX = flip ? px + 1 : px + 13;
-    // предплечье идёт от плеча к голове диагонально
-    ctx.fillRect(handX, y + 11, 1, 1);  // из плеча
-    const midX = flip ? px + 2 : px + 12;
-    ctx.fillRect(midX, y + 9, 1, 2);    // вверх
-    const tipX = flip ? px + 3 : px + 11;
-    ctx.fillRect(tipX, y + 8, 1, 1);    // у головы
-    // Сигарета торчит от кисти
-    const cigX = flip ? tipX - 1 : tipX + 1;
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(cigX, y + 8, 1, 1);
-    // Тлеющий кончик мерцает
+    const handX = flip ? px + 1 : px + 15;
+    const midX = flip ? px + 3 : px + 13;
+    const tipX = flip ? px + 4 : px + 12;
+    ctx.fillRect(handX, py + bob + 14, 2, 3);  // плечо
+    ctx.fillRect(midX, py + bob + 10, 2, 4);   // предплечье
+    ctx.fillRect(tipX, py + bob + 9, 2, 2);    // кисть
+    // Сигарета
+    const cigX = flip ? tipX - 2 : tipX + 2;
+    ctx.fillRect(cigX, py + bob + 9, 1, 1);
+    // Тлеющий кончик
     if (Math.floor(t * 3) % 2 === 0) {
-      ctx.fillRect(cigX + (flip ? -1 : 1), y + 8, 1, 1);
+      ctx.fillRect(cigX + (flip ? -1 : 1), py + bob + 9, 1, 1);
     }
-    // Дым — 3 точки восходящие
+    // Дым
     const smokeBaseX = cigX + (flip ? -1 : 1);
-    const smokeBaseY = y + 8;
+    const smokeBaseY = py + bob + 9;
     for (let i = 0; i < 3; i++) {
       const phase = (t * 0.8 + i * 0.33) % 1;
       if (phase > 0.9) continue;
-      const dy = -Math.round(phase * 10);
+      const dy = -Math.round(phase * 12);
       const dx = Math.round(Math.sin(phase * Math.PI * 2 + i) * 2);
       ctx.globalAlpha = (1 - phase) * 0.7;
       ctx.fillRect(smokeBaseX + dx, smokeBaseY + dy, 1, 1);
@@ -242,309 +180,243 @@ function drawPoseIdle(px, py, flip, t) {
   }
 }
 
-// ── БЕГ И СПРИНТ В ПРОФИЛЬ ───────────────────────────────────────
-// Когда игрок бежит — мы видим его сбоку (в профиль).
-// flip=false: бежит вправо, лицом вправо.
-// flip=true: бежит влево, лицом влево.
+// ── БЕГ/СПРИНТ В ПРОФИЛЬ ──────────────────────────────────────────────
 
-// Шляпа в профиль — плоский силуэт сбоку (две ступени)
 function drawHatProfile(px, py, flip) {
   ctx.fillStyle = '#fff';
-  // Тулья — 5×3 со смещением в зависимости от flip
-  ctx.fillRect(px + 5, py, 5, 3);
-  // Поля — широкие, но в профиль немного смещены вперёд
-  ctx.fillRect(px + 1, py + 3, 13, 1);
+  ctx.fillRect(px + 7, py, 4, 2);
+  ctx.fillRect(px + 6, py + 2, 6, 1);
+  ctx.fillRect(px + 3, py + 3, 12, 1);
+  ctx.fillRect(px, py + 4, 18, 2);
 }
 
-// Голова в профиль — с одним глазом + намёк на нос
 function drawHeadProfile(px, py, flip) {
   ctx.fillStyle = '#fff';
-  // Голова 9×5
-  ctx.fillRect(px + 3, py + 4, 9, 5);
-  // Нос — 1 пиксель торчит в сторону flip
-  if (flip) {
-    ctx.fillRect(px + 2, py + 6, 1, 1);
-  } else {
-    ctx.fillRect(px + 12, py + 6, 1, 1);
-  }
-  // Один глаз — спереди (в направлении facing)
+  ctx.fillRect(px + 4, py + 7, 10, 5);
+  // Нос
+  if (flip) ctx.fillRect(px + 3, py + 9, 1, 1);
+  else ctx.fillRect(px + 14, py + 9, 1, 1);
+  // Глаз
   ctx.fillStyle = '#000';
-  if (flip) {
-    ctx.fillRect(px + 4, py + 5, 1, 1);
-  } else {
-    ctx.fillRect(px + 10, py + 5, 1, 1);
-  }
+  if (flip) ctx.fillRect(px + 5, py + 8, 1, 1);
+  else ctx.fillRect(px + 12, py + 8, 1, 1);
 }
 
-// Торс в профиль — узкий силуэт
 function drawTorsoProfile(px, py, flip, lean) {
   ctx.fillStyle = '#fff';
-  // lean — наклон вперёд (при беге 1, при спринте 2)
   const leanX = flip ? -lean : lean;
-  // Шея/плечи
-  ctx.fillRect(px + 4 + leanX, py + 9, 7, 1);
+  // Плечи
+  ctx.fillRect(px + 4 + leanX, py + 13, 10, 1);
+  ctx.fillRect(px + 3 + leanX, py + 14, 12, 2);
   // Туловище
-  ctx.fillRect(px + 3 + leanX, py + 10, 9, 1);
-  ctx.fillRect(px + 4 + leanX, py + 11, 7, 1);
-  ctx.fillRect(px + 4 + leanX, py + 12, 7, 1);
-  ctx.fillRect(px + 4 + leanX, py + 13, 7, 1);
-  ctx.fillRect(px + 4 + leanX, py + 14, 7, 1);
-  // пояс
-  ctx.fillRect(px + 4, py + 15, 7, 1);
+  ctx.fillRect(px + 4 + leanX, py + 16, 10, 2);
+  ctx.fillRect(px + 5 + leanX, py + 18, 8, 2);
+  ctx.fillRect(px + 5 + leanX, py + 20, 8, 2);
+  // Пояс
+  ctx.fillRect(px + 5, py + 22, 8, 1);
+  // Попа
+  ctx.fillRect(px + 4, py + 23, 10, 3);
 }
 
-// Рука в профиль — машет. phase: -1 / 0 / +1
-// phase=+1 рука вперёд, -1 назад, 0 нейтрально
 function drawArmProfile(px, py, flip, phase) {
   ctx.fillStyle = '#fff';
-  const dir = flip ? -1 : 1;
   if (phase > 0) {
-    // Рука вперёд — плечо у корпуса, кисть впереди
-    const shoulderX = flip ? px + 4 : px + 10;
-    const handX = flip ? px + 1 : px + 12;
-    ctx.fillRect(shoulderX, py + 10, 2, 2);
-    ctx.fillRect(handX, py + 11, 2, 3);
+    const handX = flip ? px + 1 : px + 15;
+    ctx.fillRect(flip ? px + 5 : px + 13, py + 14, 2, 2);
+    ctx.fillRect(handX, py + 15, 2, 5);
   } else if (phase < 0) {
-    // Рука назад
-    const shoulderX = flip ? px + 10 : px + 4;
-    const handX = flip ? px + 12 : px + 1;
-    ctx.fillRect(shoulderX, py + 10, 2, 2);
-    ctx.fillRect(handX, py + 11, 2, 3);
+    const handX = flip ? px + 15 : px + 1;
+    ctx.fillRect(flip ? px + 13 : px + 5, py + 14, 2, 2);
+    ctx.fillRect(handX, py + 15, 2, 5);
   } else {
-    // Средний кадр — руки близко к телу
-    ctx.fillRect(px + 3, py + 11, 2, 3);
-    ctx.fillRect(px + 10, py + 11, 2, 3);
+    ctx.fillRect(px + 4, py + 15, 2, 5);
+    ctx.fillRect(px + 12, py + 15, 2, 5);
   }
 }
 
-// Ноги в профиль — шагают. stepFrame: 0 / 1 / 2 / 3 (4-кадровый цикл)
 function drawLegsProfile(px, py, flip, stepFrame) {
   ctx.fillStyle = '#fff';
-  const dir = flip ? -1 : 1;
-  // pos0: нейтральное положение (обе ноги вместе)
-  // step 0: передняя нога впереди, задняя назад
-  // step 1: ноги сходятся
-  // step 2: передняя назад, задняя впереди
-  // step 3: ноги сходятся
   if (stepFrame === 0) {
-    // Передняя нога вперёд
-    const frontX = flip ? px + 3 : px + 10;
-    const backX  = flip ? px + 10 : px + 3;
-    ctx.fillRect(frontX, py + 17, 2, 5);
-    ctx.fillRect(backX, py + 17, 2, 4);
-    ctx.fillRect(frontX - 1, py + 22, 3, 1);
-    ctx.fillRect(backX + (flip ? 1 : -1), py + 21, 3, 1);
-    // Ступни
-    ctx.fillRect(frontX - 1, py + 23, 4, 1);
-    ctx.fillRect(backX, py + 22, 3, 1);
+    const frontX = flip ? px + 4 : px + 11;
+    const backX  = flip ? px + 11 : px + 4;
+    ctx.fillRect(frontX, py + 26, 3, 8);
+    ctx.fillRect(backX, py + 26, 3, 6);
+    ctx.fillRect(frontX - 1, py + 34, 5, 2);
+    ctx.fillRect(backX, py + 32, 5, 2);
   } else if (stepFrame === 2) {
-    // Задняя нога впереди
-    const frontX = flip ? px + 10 : px + 3;
-    const backX  = flip ? px + 3 : px + 10;
-    ctx.fillRect(frontX, py + 17, 2, 5);
-    ctx.fillRect(backX, py + 17, 2, 4);
-    ctx.fillRect(frontX - 1, py + 22, 3, 1);
-    ctx.fillRect(backX + (flip ? 1 : -1), py + 21, 3, 1);
-    ctx.fillRect(frontX - 1, py + 23, 4, 1);
-    ctx.fillRect(backX, py + 22, 3, 1);
+    const frontX = flip ? px + 11 : px + 4;
+    const backX  = flip ? px + 4 : px + 11;
+    ctx.fillRect(frontX, py + 26, 3, 8);
+    ctx.fillRect(backX, py + 26, 3, 6);
+    ctx.fillRect(frontX - 1, py + 34, 5, 2);
+    ctx.fillRect(backX, py + 32, 5, 2);
   } else {
-    // Средний кадр — ноги сошлись
-    ctx.fillRect(px + 5, py + 17, 2, 5);
-    ctx.fillRect(px + 8, py + 17, 2, 5);
-    ctx.fillRect(px + 4, py + 23, 4, 1);
-    ctx.fillRect(px + 8, py + 23, 4, 1);
+    ctx.fillRect(px + 6, py + 26, 3, 8);
+    ctx.fillRect(px + 10, py + 26, 3, 8);
+    ctx.fillRect(px + 5, py + 34, 5, 2);
+    ctx.fillRect(px + 10, py + 34, 5, 2);
   }
 }
 
-// Хер болтается в профиль — трясётся горизонтально
 function drawDickProfile(px, py, flip, swing) {
   ctx.fillStyle = '#fff';
   const dx = Math.round(swing);
   const dir = flip ? -1 : 1;
-  // В профиль — висит сбоку, торчит чуть вперёд
-  const baseX = flip ? px + 5 : px + 8;
-  ctx.fillRect(baseX + dx, py + 16, 1, 2);
-  ctx.fillRect(baseX + dx + dir, py + 17, 1, 1);
+  const baseX = flip ? px + 6 : px + 10;
+  ctx.fillRect(baseX + dx, py + 24, 1, 3);
+  ctx.fillRect(baseX + dx + dir, py + 26, 1, 1);
 }
 
 function drawPoseRun(px, py, flip, t) {
-  // 4-кадровый цикл в профиль
   const step = Math.floor(t * 10) % 4;
   const bob = (step === 1 || step === 3) ? -1 : 0;
-
   drawHatProfile(px, py + bob, flip);
   drawHeadProfile(px, py + bob, flip);
   drawTorsoProfile(px, py + bob, flip, 1);
-  // Руки противоходом к ногам
-  if (step === 0) {
-    // передняя нога вперёд → передняя рука НАЗАД
-    drawArmProfile(px, py + bob, flip, -1);
-  } else if (step === 2) {
-    drawArmProfile(px, py + bob, flip, 1);
-  } else {
-    drawArmProfile(px, py + bob, flip, 0);
-  }
+  if (step === 0) drawArmProfile(px, py + bob, flip, -1);
+  else if (step === 2) drawArmProfile(px, py + bob, flip, 1);
+  else drawArmProfile(px, py + bob, flip, 0);
   drawLegsProfile(px, py, flip, step);
-  // Хер трясётся
-  const swing = Math.sin(t * 20) * 1.5;
-  drawDickProfile(px, py, flip, swing);
+  drawDickProfile(px, py, flip, Math.sin(t * 20) * 1.5);
 }
 
 function drawPoseSprint(px, py, flip, t) {
-  // Как run, но быстрее и с сильным наклоном
   const step = Math.floor(t * 14) % 4;
   const bob = (step === 1 || step === 3) ? -1 : 0;
-
   drawHatProfile(px, py + bob, flip);
   drawHeadProfile(px, py + bob, flip);
   drawTorsoProfile(px, py + bob, flip, 2);
-  // Обе руки назад при спринте
   drawArmProfile(px, py + bob, flip, -1);
   drawLegsProfile(px, py, flip, step);
-  const swing = Math.sin(t * 28) * 2;
-  drawDickProfile(px, py, flip, swing);
+  drawDickProfile(px, py, flip, Math.sin(t * 28) * 2);
 }
 
+// ── ОСТАЛЬНЫЕ ПОЗЫ (вид со спины) ─────────────────────────────────────
+
 function drawPoseJumpUp(px, py, flip) {
-  // только прыгнул — тело вытянуто, руки чуть подняты
   drawHat(px, py);
   drawHeadBack(px, py, 1);
   drawTorsoBack(px, py, 0);
-  // Руки подняты
+  // Руки подняты вверх
   ctx.fillStyle = '#fff';
-  ctx.fillRect(px, py + 6, 2, 5);
-  ctx.fillRect(px + 13, py + 6, 2, 5);
+  ctx.fillRect(px, py + 9, 2, 6);
+  ctx.fillRect(px + 16, py + 9, 2, 6);
   drawButt(px, py);
-  // Ноги — одна согнута, другая вытянута
+  // Ноги подтянуты
   ctx.fillStyle = '#fff';
-  ctx.fillRect(px + 3, py + 18, 4, 4);
-  ctx.fillRect(px + 8, py + 18, 4, 5);
-  ctx.fillRect(px + 2, py + 22, 5, 1);
-  ctx.fillRect(px + 8, py + 23, 5, 1);
+  ctx.fillRect(px + 4, py + 27, 3, 5);
+  ctx.fillRect(px + 11, py + 27, 3, 6);
+  ctx.fillRect(px + 3, py + 32, 5, 1);
+  ctx.fillRect(px + 10, py + 33, 5, 1);
   drawDick(px, py, 0);
 }
 
 function drawPoseJumpPeak(px, py, flip) {
-  // пик прыжка — ноги раскиданы в стороны (классическая поза прыжка)
   drawHat(px, py);
   drawHeadBack(px, py, 1);
   drawTorsoBack(px, py, 0);
   // Руки раскинуты
   ctx.fillStyle = '#fff';
-  ctx.fillRect(px - 1, py + 10, 3, 2);
-  ctx.fillRect(px + 13, py + 10, 3, 2);
+  ctx.fillRect(px - 1, py + 14, 3, 3);
+  ctx.fillRect(px + 16, py + 14, 3, 3);
   drawButt(px, py);
-  // Ноги раскинуты шире
+  // Ноги шире
   ctx.fillStyle = '#fff';
-  ctx.fillRect(px + 1, py + 18, 4, 4);
-  ctx.fillRect(px + 10, py + 18, 4, 4);
-  ctx.fillRect(px, py + 22, 5, 1);
-  ctx.fillRect(px + 10, py + 22, 5, 1);
-  // ХЕР болтается
+  ctx.fillRect(px + 2, py + 27, 3, 6);
+  ctx.fillRect(px + 13, py + 27, 3, 6);
+  ctx.fillRect(px + 1, py + 33, 5, 1);
+  ctx.fillRect(px + 12, py + 33, 5, 1);
   drawDick(px, py, 0);
 }
 
 function drawPoseJumpDown(px, py, flip) {
-  // падает — руки по бокам, ноги прямые вниз
   drawHat(px, py);
   drawHeadBack(px, py, 1);
   drawTorsoBack(px, py, 0);
   drawArmsDown(px, py);
   drawButt(px, py);
   drawLegs(px, py, 0);
-  // падая, хер отклоняется чуть назад (вверх т.к. падаем)
   drawDick(px, py, Math.random() - 0.5);
 }
 
 function drawPoseLand(px, py, flip) {
-  // приземление — тело сжато вниз, ноги раскинуты
-  drawHat(px, py + 2);
-  drawHeadBack(px, py + 2, 0.7);
-  // сжатый торс
+  drawHat(px, py + 3);
+  drawHeadBack(px, py + 3, 0.7);
+  // Сжатый торс
   ctx.fillStyle = '#fff';
-  ctx.fillRect(px + 1, py + 11, 13, 1);
-  ctx.fillRect(px, py + 12, 15, 2);
-  ctx.fillRect(px + 1, py + 14, 13, 1);
+  ctx.fillRect(px + 1, py + 16, 16, 2);
+  ctx.fillRect(px + 2, py + 18, 14, 2);
+  ctx.fillRect(px + 3, py + 20, 12, 2);
+  // Задница ближе к земле
+  ctx.fillRect(px + 2, py + 22, 14, 2);
   ctx.fillStyle = '#000';
-  ctx.fillRect(px + 7, py + 12, 1, 2);
-  // задница чуть видна
+  ctx.fillRect(px + 8, py + 22, 2, 2);
+  // Ноги раскинуты широко
   ctx.fillStyle = '#fff';
-  ctx.fillRect(px + 2, py + 15, 5, 2);
-  ctx.fillRect(px + 8, py + 15, 5, 2);
-  ctx.fillStyle = '#000';
-  ctx.fillRect(px + 7, py + 15, 1, 2);
-  // ноги раскинуты широко
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(px + 1, py + 17, 2, 5);
-  ctx.fillRect(px + 12, py + 17, 2, 5);
-  ctx.fillRect(px, py + 22, 4, 2);
-  ctx.fillRect(px + 11, py + 22, 4, 2);
+  ctx.fillRect(px + 1, py + 24, 3, 8);
+  ctx.fillRect(px + 14, py + 24, 3, 8);
+  ctx.fillRect(px, py + 32, 4, 2);
+  ctx.fillRect(px + 14, py + 32, 4, 2);
+  ctx.fillRect(px, py + 34, 4, 2);
+  ctx.fillRect(px + 14, py + 34, 4, 2);
   drawDick(px, py, 0);
 }
 
-// (прежний bendX-helper убран — не нужен)
-
 function drawPoseCrouch(px, py, flip) {
-  // присел — голова ниже, задница ближе к полу
-  drawHat(px, py + 4);
-  drawHeadBack(px, py + 4, 1);
-  // короткий торс
+  // Присел — всё сжато
+  drawHat(px, py + 6);
+  drawHeadBack(px, py + 6, 1);
+  // Короткий торс
   ctx.fillStyle = '#fff';
-  ctx.fillRect(px + 1, py + 11, 13, 3);
+  ctx.fillRect(px + 1, py + 17, 16, 3);
+  ctx.fillRect(px + 2, py + 20, 14, 3);
+  // Попа
+  ctx.fillRect(px + 2, py + 23, 6, 2);
+  ctx.fillRect(px + 10, py + 23, 6, 2);
   ctx.fillStyle = '#000';
-  ctx.fillRect(px + 7, py + 11, 1, 3);
-  // задница
+  ctx.fillRect(px + 8, py + 23, 2, 2);
+  // Согнутые ноги
   ctx.fillStyle = '#fff';
-  ctx.fillRect(px + 1, py + 14, 6, 2);
-  ctx.fillRect(px + 8, py + 14, 6, 2);
-  ctx.fillStyle = '#000';
-  ctx.fillRect(px + 7, py + 14, 1, 2);
-  // согнутые ноги
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(px + 2, py + 16, 4, 2);
-  ctx.fillRect(px + 9, py + 16, 4, 2);
-  ctx.fillRect(px + 1, py + 18, 5, 1);
-  ctx.fillRect(px + 9, py + 18, 5, 1);
-  // руки прижаты к телу
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(px, py + 12, 2, 3);
-  ctx.fillRect(px + 13, py + 12, 2, 3);
-  drawDick(px, py - 2, 0);
+  ctx.fillRect(px + 3, py + 25, 4, 5);
+  ctx.fillRect(px + 11, py + 25, 4, 5);
+  ctx.fillRect(px + 2, py + 30, 5, 2);
+  ctx.fillRect(px + 11, py + 30, 5, 2);
+  // Прижаты к телу руки
+  ctx.fillRect(px, py + 17, 2, 5);
+  ctx.fillRect(px + 16, py + 17, 2, 5);
 }
 
 function drawPosePunchWindup(px, py, flip) {
-  // замах — тело слегка повёрнуто, одна рука отведена назад (видна как культя сбоку)
   drawHat(px, py);
   drawHeadBack(px, py, 1);
   drawTorsoBack(px, py, flip ? -1 : 1);
-  // задняя рука (противоположная от удара) — внутри, у тела
+  // Задняя рука у тела
   ctx.fillStyle = '#fff';
-  const backArmX = flip ? px + 13 : px;
-  ctx.fillRect(backArmX, py + 10, 2, 5);
-  // передняя рука (бьющая) отведена назад — торчит в противоположную от удара сторону
-  const retrX = flip ? px + 1 : px + 12;
-  ctx.fillRect(retrX, py + 10, 2, 4);
+  const backArmX = flip ? px + 16 : px;
+  ctx.fillRect(backArmX, py + 14, 2, 8);
+  // Передняя рука отведена назад (замах)
+  const retrX = flip ? px + 1 : px + 15;
+  ctx.fillRect(retrX, py + 13, 2, 6);
   drawButt(px, py);
   drawLegs(px, py, 0);
   drawDick(px, py, 0);
 }
 
 function drawPosePunchHit(px, py, flip) {
-  // удар — рука вытянута в сторону цели
   drawHat(px, py);
   drawHeadBack(px, py, 1);
-  drawTorsoBack(px, py, flip ? 1 : -1); // корпус поворачивается в сторону удара
-  // задняя рука — внутри
+  drawTorsoBack(px, py, flip ? 1 : -1);
+  // Задняя рука
   ctx.fillStyle = '#fff';
-  const backArmX = flip ? px + 13 : px;
-  ctx.fillRect(backArmX, py + 10, 2, 5);
-  // бьющая рука — выходит за bbox в сторону facing
+  const backArmX = flip ? px + 16 : px;
+  ctx.fillRect(backArmX, py + 14, 2, 8);
+  // Бьющая рука вытянута вперёд
   const dir = flip ? -1 : 1;
-  const armStart = flip ? px - 2 : px + 15;
-  ctx.fillRect(armStart, py + 10, 2, 3);
-  ctx.fillRect(armStart + dir * 2, py + 10, 2, 3);
-  // кулак
-  ctx.fillRect(armStart + dir * 4, py + 10, 3, 3);
+  const armStart = flip ? px - 3 : px + 18;
+  ctx.fillRect(armStart, py + 14, 3, 3);
+  ctx.fillRect(armStart + dir * 3, py + 14, 3, 3);
+  // Кулак
+  ctx.fillRect(armStart + dir * 6, py + 13, 4, 4);
   drawButt(px, py);
   drawLegs(px, py, 0);
   drawDick(px, py, 0);
@@ -554,95 +426,88 @@ function drawPosePunchRecover(px, py, flip) {
   drawHat(px, py);
   drawHeadBack(px, py, 1);
   drawTorsoBack(px, py, 0);
-  // бьющая рука чуть вытянута (промежуточная фаза)
+  // Задняя рука
   ctx.fillStyle = '#fff';
+  const backArmX = flip ? px + 16 : px;
+  ctx.fillRect(backArmX, py + 14, 2, 8);
+  // Передняя рука 50% вытянута
   const dir = flip ? -1 : 1;
-  const armStart = flip ? px - 1 : px + 14;
-  ctx.fillRect(armStart, py + 11, 2, 3);
-  const backArmX = flip ? px + 13 : px;
-  ctx.fillRect(backArmX, py + 10, 2, 5);
+  const armStart = flip ? px - 1 : px + 17;
+  ctx.fillRect(armStart, py + 15, 2, 4);
   drawButt(px, py);
   drawLegs(px, py, 0);
   drawDick(px, py, 0);
 }
 
 function drawPoseDownPunch(px, py, flip) {
-  // ↓+Z — в воздухе, кулак вниз
   drawHat(px, py);
   drawHeadBack(px, py, 1);
   drawTorsoBack(px, py, 0);
-  // Руки: одна поднята, другая с кулаком вниз
+  // Одна рука поднята
   ctx.fillStyle = '#fff';
-  ctx.fillRect(px, py + 5, 2, 6);
-  // Рука вниз с кулаком
-  ctx.fillRect(px + 6, py + 15, 3, 8);
-  ctx.fillRect(px + 5, py + 22, 5, 2);
+  ctx.fillRect(px, py + 7, 2, 9);
+  // Вторая рука с кулаком вниз
+  ctx.fillRect(px + 8, py + 22, 3, 12);
+  ctx.fillRect(px + 7, py + 33, 5, 3);
   drawButt(px, py);
   // Ноги подтянуты
   ctx.fillStyle = '#fff';
-  ctx.fillRect(px + 1, py + 18, 3, 3);
-  ctx.fillRect(px + 11, py + 18, 3, 3);
+  ctx.fillRect(px + 1, py + 27, 3, 4);
+  ctx.fillRect(px + 14, py + 27, 3, 4);
 }
 
 function drawPoseUpPunch(px, py, flip) {
-  // прыжок+Z — кулак вверх
-  drawHat(px, py + 3);
-  drawHeadBack(px, py + 3, 1);
-  drawTorsoBack(px, py + 3, 0);
-  // Одна рука опущена, другая с кулаком вверх
+  drawHat(px, py + 5);
+  drawHeadBack(px, py + 5, 1);
+  drawTorsoBack(px, py + 5, 0);
+  // Одна рука опущена
   ctx.fillStyle = '#fff';
-  ctx.fillRect(px, py + 13, 2, 5);
-  // рука вверх
-  ctx.fillRect(px + 6, py - 2, 3, 10);
-  ctx.fillRect(px + 5, py - 4, 5, 2);
-  drawButt(px, py + 3);
+  ctx.fillRect(px, py + 19, 2, 8);
+  // Вторая рука с кулаком вверх
+  ctx.fillRect(px + 8, py - 3, 3, 14);
+  ctx.fillRect(px + 7, py - 6, 5, 3);
+  drawButt(px, py + 5);
   drawLegs(px, py, 0);
   drawDick(px, py, 0);
 }
 
 function drawPoseHurt(px, py, flip) {
-  // Получил урон — корпус отшатнулся, голова назад (но со спины это = голова дёрнулась)
-  drawHat(px, py + 1);
-  drawHeadBack(px, py + 1, 1);
-  drawTorsoBack(px, py + 1, flip ? -2 : 2);
-  // Руки болтаются
+  drawHat(px, py + 2);
+  drawHeadBack(px, py + 2, 1);
+  drawTorsoBack(px, py + 2, flip ? -3 : 3);
   ctx.fillStyle = '#fff';
-  ctx.fillRect(px, py + 12, 2, 4);
-  ctx.fillRect(px + 13, py + 12, 2, 4);
-  drawButt(px, py + 1);
-  drawLegs(px, py + 1, 0);
-  drawDick(px, py + 1, 0);
+  ctx.fillRect(px, py + 17, 2, 6);
+  ctx.fillRect(px + 16, py + 17, 2, 6);
+  drawButt(px, py + 2);
+  drawLegs(px, py + 2, 0);
+  drawDick(px, py + 2, 0);
 }
 
 function drawPoseDeath(px, py, flip, dtimer) {
   const t = Math.min(1, dtimer / 0.4);
   if (t < 1) {
-    // Падает лицом вниз (со спины видим как ложится)
-    const offY = Math.round(t * 12);
+    // Падает лицом вниз
+    const offY = Math.round(t * 18);
     drawHat(px, py + offY);
     drawHeadBack(px, py + offY, 1 - t * 0.3);
     ctx.fillStyle = '#fff';
-    const tt = Math.round(t * 6);
-    ctx.fillRect(px + 1, py + 10 + tt, 13, 3);
-    ctx.fillRect(px + 2, py + 14 + tt, 5, 2);
-    ctx.fillRect(px + 8, py + 14 + tt, 5, 2);
-    ctx.fillRect(px + 2, py + 17 + tt, 4, Math.max(1, 5 - tt));
-    ctx.fillRect(px + 9, py + 17 + tt, 4, Math.max(1, 5 - tt));
+    const tt = Math.round(t * 10);
+    ctx.fillRect(px + 1, py + 14 + tt, 16, 3);
+    ctx.fillRect(px + 2, py + 22 + tt, 14, 3);
+    ctx.fillRect(px + 3, py + 25 + tt, 6, Math.max(1, 8 - tt));
+    ctx.fillRect(px + 9, py + 25 + tt, 6, Math.max(1, 8 - tt));
   } else {
-    // Полностью лежит на животе — мы видим спину + попу + ноги
+    // Лежит на животе — спина и попа видны
     ctx.fillStyle = '#fff';
-    // Шляпа скатилась рядом
-    ctx.fillRect(px + 11, py + 20, 4, 1);
-    ctx.fillRect(px + 10, py + 21, 5, 1);
-    // Голова слева (или справа если flip)
+    // Шляпа рядом
+    ctx.fillRect(px + 13, py + 30, 5, 2);
+    ctx.fillRect(px + 12, py + 32, 7, 2);
+    // Тело лежит горизонтально
     const bodyX = flip ? px + 2 : px;
-    ctx.fillRect(bodyX, py + 20, 3, 3);
-    // Плечи и спина — длинный прямоугольник
-    ctx.fillRect(bodyX + 3, py + 20, 5, 3);
-    // Попа — чуть выпирает
-    ctx.fillRect(bodyX + 7, py + 19, 3, 4);
-    // Ноги
-    ctx.fillRect(bodyX + 9, py + 21, 3, 2);
+    ctx.fillRect(bodyX, py + 30, 4, 5);
+    ctx.fillRect(bodyX + 3, py + 30, 8, 5);
+    ctx.fillRect(bodyX + 10, py + 29, 4, 6);
+    ctx.fillRect(bodyX + 13, py + 31, 3, 3);
   }
 }
 
