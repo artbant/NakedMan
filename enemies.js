@@ -18,14 +18,18 @@ function hurtPlayer(knockbackX, knockbackY) {
   p.lives--;
   screenShake(3, 0.2);
   playSound('hurt');
-  say(p.lives <= 0 ? 'die' : 'hurt');
-  game.damageFlash = 0.3; // вспышка по краям экрана
+  game.damageFlash = 0.3;
   if (p.lives <= 0) {
     p.dead = true;
     p.dtimer = 0;
     screenShake(5, 0.35);
+    // Серия ругательств пока лежит
+    say('die');
+    setTimeout(() => { if (p.dead) say('die'); }, 800);
+    setTimeout(() => { if (p.dead) say('die'); }, 1800);
     return;
   }
+  say('hurt');
   p.invTimer = 0.6;
   p.vx = knockbackX;
   if (knockbackY !== 0) p.vy = knockbackY;
@@ -94,13 +98,33 @@ function drawProjectiles() {
 const PLAYER_LINES = {
   start:   ["where am i", "not my block", "good party", "ok. ok.", "need pants", "huh", "guess i walk", "whatever"],
   hurt:    ["ow", "no", "ok that hurt", "rude", "seriously", "hey", "stop", "dont"],
-  die:     ["oh well", "again", "fine whatever", "call it a dream", "i didnt fall"],
+  die:     ["shit", "fuck", "noo", "aargh", "are you kidding", "seriously", "not again", "goddamn"],
   kill:    ["sorry", "didnt mean it", "my bad", "you started it", "were even", "bye", "no hard feelings"],
   rescue:  ["youre here too?", "lets go together", "hang on", "now were two", "know the exit?"],
   pickup:  ["this will do", "nice find", "dont touch my stuff", "thanks universe"],
   win:     ["where to now", "next one better be easier", "going home", "almost get it", "ok keep going", "weird place"],
   explode: ["fine fine", "did that on purpose", "ok too much", "not bad"],
   firstenemy: ["oh no", "whats that", "hi", "oops", "dont touch"],
+  // Мысли/шутки пока курит (idle > 1.5 сек)
+  smoke:   [
+    "tastes like dust",
+    "good cig",
+    "why am i naked",
+    "lost my pants",
+    "hat still on tho",
+    "another dimension",
+    "this isnt home",
+    "i was at a party",
+    "i think",
+    "feels like monday",
+    "is this hell",
+    "at least its quiet",
+    "wait what was that",
+    "need a drink",
+    "quitting tomorrow",
+    "weird place to smoke",
+    "am i dreaming",
+  ],
 };
 
 let speechBubble = { text: '', timer: 0, worldX: 0, worldY: 0 };
@@ -491,6 +515,7 @@ function updateEnemies(dt) {
     if (e._aimTimer > 0) e._aimTimer -= dt;
     if (e._windupTimer > 0) e._windupTimer -= dt;
     if (e._heardTimer > 0) e._heardTimer -= dt;
+    if (e._hitFlash > 0) e._hitFlash -= dt;
     // Таймер анимации: растёт пропорционально модулю скорости.
     // Стоящий враг не "шагает", движущийся — анимируется быстрее если быстрее.
     e._animT = (e._animT || 0) + dt * (1 + Math.abs(e.vx) / 30);
@@ -821,23 +846,67 @@ function updateEnemies(dt) {
 let ragdolls = [];
 
 function spawnRagdoll(e) {
-  // разбиваем врага на 4-6 кусков которые разлетаются
+  // Пиксельный распад: разбиваем bbox врага на сетку кубиков.
+  // Каждый кубик получает импульс "наружу" (от центра) + случайный.
+  // Результат — враг красиво разваливается на части.
   const cx = e.x + e.w / 2;
   const cy = e.y + e.h / 2;
-  const count = 5 + Math.floor(Math.random() * 3);
-  for (let i = 0; i < count; i++) {
-    const ang = (Math.random() * Math.PI * 2);
-    const spd = 40 + Math.random() * 80;
+  // Плотность: примерно 1 кубик на каждые 10 квадратных пикселей
+  const area = e.w * e.h;
+  const targetCount = Math.min(24, Math.max(12, Math.floor(area / 18)));
+
+  for (let i = 0; i < targetCount; i++) {
+    // Позиция кубика — случайная точка в bbox
+    const px = e.x + Math.random() * e.w;
+    const py = e.y + Math.random() * e.h;
+    // Импульс "наружу" от центра врага
+    const dxFromCenter = px - cx;
+    const dyFromCenter = py - cy;
+    const distFromCenter = Math.hypot(dxFromCenter, dyFromCenter) || 1;
+    // базовая скорость взрыва + случайная добавка
+    const explodeSpd = 80 + Math.random() * 60;
+    const outVx = (dxFromCenter / distFromCenter) * explodeSpd;
+    const outVy = (dyFromCenter / distFromCenter) * explodeSpd;
+    // плюс случайная "разбрызгивалка" для неравномерности
+    const noiseAng = Math.random() * Math.PI * 2;
+    const noiseSpd = 20 + Math.random() * 40;
     ragdolls.push({
-      x: cx - game.cam, y: cy,
-      vx: Math.cos(ang) * spd + (e.vx || 0) * 0.5,
-      vy: Math.sin(ang) * spd - 60,
-      size: 1 + Math.floor(Math.random() * 3),
+      x: px - game.cam,
+      y: py,
+      vx: outVx + Math.cos(noiseAng) * noiseSpd + (e.vx || 0) * 0.3,
+      vy: outVy + Math.sin(noiseAng) * noiseSpd - 40, // лёгкий подброс вверх
+      size: 1 + Math.floor(Math.random() * 3), // 1-3 px
       life: 1,
-      maxLife: 0.6 + Math.random() * 0.5,
-      rot: Math.random() * 4 - 2, // скорость "вращения" (визуально)
+      maxLife: 0.6 + Math.random() * 0.6,
+      rot: Math.random() * 4 - 2,
     });
   }
+
+  // Дополнительно — горизонтальная волна пыли у ног (если враг на земле)
+  const feetY = e.y + e.h;
+  for (let i = 0; i < 8; i++) {
+    const ang = (Math.random() < 0.5 ? 0 : Math.PI) + (Math.random() - 0.5) * 0.6;
+    const spd = 60 + Math.random() * 80;
+    particles.push({
+      x: cx - game.cam,
+      y: feetY - 2,
+      vx: Math.cos(ang) * spd,
+      vy: Math.sin(ang) * spd * 0.3 - 10, // пыль низко летит
+      life: 1,
+      maxLife: 0.35 + Math.random() * 0.25,
+      size: 2 + Math.floor(Math.random() * 2),
+    });
+  }
+  // Центральная "вспышка" — один крупный объёмный взрыв
+  particles.push({
+    x: cx - game.cam,
+    y: cy,
+    vx: 0, vy: 0,
+    life: 1,
+    maxLife: 0.12,
+    size: Math.max(e.w, e.h) * 0.8, // крупная вспышка размером с врага
+    type: 'flash',
+  });
 }
 
 function updateRagdolls(dt) {
@@ -879,9 +948,32 @@ function checkPunchHit() {
       e.hp--; e.flashTimer = 0.25; e.hitThisSwing = true;
       e.vx = p.facing > 0 ? 120 : -120;
       e.vy = -80;
+      // Белая обводка на 60мс — "кадр вспышки" как в Hotline Miami
+      e._hitFlash = 0.06;
+
+      // Частицы-брызги из точки удара — белые чёрточки в сторону отлёта врага
+      const impactX = e.x + e.w / 2 - game.cam;
+      const impactY = e.y + e.h / 2;
+      for (let k = 0; k < 8; k++) {
+        const baseAng = p.facing > 0 ? 0 : Math.PI;
+        const ang = baseAng + (Math.random() - 0.5) * 1.4;
+        const spd = 80 + Math.random() * 120;
+        particles.push({
+          x: impactX, y: impactY,
+          vx: Math.cos(ang) * spd,
+          vy: Math.sin(ang) * spd - 40 - Math.random() * 30,
+          life: 1,
+          maxLife: 0.2 + Math.random() * 0.15,
+          size: 2 + Math.floor(Math.random() * 2),
+        });
+      }
+      // Freeze-frame и дрожание — ощутимый вес удара
+      game.freezeTimer = Math.max(game.freezeTimer, 0.03);
+      screenShake(1.8, 0.08);
+
       if (e.hp <= 0) {
         e.dead = true; e.deathTimer = 0; game.score++; game.enemiesKilled = (game.enemiesKilled || 0) + 1;
-        game.freezeTimer = 0.06;
+        game.freezeTimer = 0.08;
         screenShake(3, 0.15);
         say('kill');
         if (typeof playSting === 'function') playSting('kill');
@@ -890,7 +982,6 @@ function checkPunchHit() {
     }
   }
   checkPunchObjects();
-  // удар по боссу (если он есть на уровне и находится в зоне удара)
   if (typeof bossPunchHit === 'function' && !player._bossHitThisSwing) {
     if (bossPunchHit(hx, hy, 14, 12)) {
       player._bossHitThisSwing = true;
@@ -1326,10 +1417,8 @@ function drawEnemies() {
     if (ex + e.w < 0 || ex > GW) continue;
 
     if (e.dead) {
-      ctx.globalAlpha = Math.max(0, 1 - e.deathTimer * 2);
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(ex + 2, ey + 2, e.w - 4, e.h - 4);
-      ctx.globalAlpha = 1;
+      // Не рисуем спрайт — враг "развалился" на ragdoll + частицы.
+      // Счётчик deathTimer продолжает работать в updateEnemies для удаления.
       continue;
     }
 
@@ -1393,6 +1482,14 @@ function drawEnemies() {
       }
     } else if (e.type === 'bruiser') {
       drawBruiser(drawX, drawY, e.vx < 0, bodyColor, eyeColor, e._animT, wX, wY);
+    }
+
+    // HIT-FLASH overlay — яркая белая вспышка на долю секунды при попадании
+    if (e._hitFlash > 0) {
+      ctx.globalAlpha = Math.min(1, e._hitFlash * 15); // 0.06 → alpha 0.9
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(drawX - 1, drawY - 1, e.w + 2, e.h + 2);
+      ctx.globalAlpha = 1;
     }
 
     // HP-полоска

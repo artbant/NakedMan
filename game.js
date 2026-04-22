@@ -935,6 +935,33 @@ function update(dt) {
 
   const isPunch = keys['KeyZ'] || keys['KeyX'] || mk.punch;
   if (p.pcooldown > 0) p.pcooldown -= dt;
+  // анимационный таймер (для процедурных спрайтов)
+  p._animT = (p._animT || 0) + dt;
+  // приземление — короткая анимация сжатия
+  if (p._landTimer > 0) p._landTimer = Math.max(0, p._landTimer - dt);
+
+  // ── IDLE / КУРЕНИЕ ──────────────────────────────────────────────
+  // Если игрок ничего не делает (стоит на земле, не бьёт, не в воздухе) —
+  // растёт _idleTimer. После 1.5с — достаёт сигарету (_smoking = true).
+  // Пока курит, раз в 4-7с выдаёт случайную мысль из PLAYER_LINES.smoke.
+  const isActive = Math.abs(p.vx) > 5 || !p.onGround || p.punching || p.crouching || p.dead;
+  if (isActive) {
+    p._idleTimer = 0;
+    p._smoking = false;
+    p._nextSmokeJoke = 0;
+  } else {
+    p._idleTimer = (p._idleTimer || 0) + dt;
+    if (p._idleTimer > 1.5) {
+      p._smoking = true;
+      // первая шутка через ~2с после того как закурил
+      if (!p._nextSmokeJoke) p._nextSmokeJoke = p._idleTimer + 2;
+      if (p._idleTimer > p._nextSmokeJoke) {
+        if (typeof say === 'function') say('smoke');
+        p._nextSmokeJoke = p._idleTimer + 4 + Math.random() * 4; // следующая через 4-8с
+      }
+    }
+  }
+
   if (isPunch && !p.punching && p.pcooldown <= 0) {
     p.punching = true; p.ptimer = 0; p.pframe = 0;
   }

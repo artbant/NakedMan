@@ -61,21 +61,20 @@ function updateBoss(dt) {
   if (!boss || boss.dead) {
     if (boss && boss.dead) {
       boss.deathTimer += dt;
-      // взрывные частицы в течение смерти
-      if (boss.deathTimer < 1.2 && Math.random() < 0.3) {
+      // Дополнительные мелкие искры во время распада — на уровне земли (ноги осыпаются)
+      if (boss.deathTimer < 0.8 && Math.random() < 0.5) {
         const px = boss.x + Math.random() * boss.w - game.cam;
-        const py = boss.y + Math.random() * boss.h;
+        const py = boss._legGroundY - Math.random() * T * 3;
         particles.push({
           x: px, y: py,
-          vx: (Math.random() - 0.5) * 120,
-          vy: -60 - Math.random() * 80,
-          life: 1, maxLife: 0.4 + Math.random() * 0.3,
-          size: 3
+          vx: (Math.random() - 0.5) * 60,
+          vy: -20 - Math.random() * 40,
+          life: 1, maxLife: 0.3 + Math.random() * 0.2,
+          size: 1 + Math.floor(Math.random() * 2)
         });
       }
       if (boss.deathTimer > 1.5 && !boss.defeated) {
         boss.defeated = true;
-        // разблокируем портал — вызываем функцию-хук
         if (typeof onBossDefeated === 'function') onBossDefeated();
       }
     }
@@ -86,6 +85,7 @@ function updateBoss(dt) {
   boss._moveT += dt;
 
   if (boss.flashTimer > 0) boss.flashTimer -= dt;
+  if (boss._hitFlash > 0) boss._hitFlash -= dt;
   if (boss.shootCooldown > 0) boss.shootCooldown -= dt;
   if (boss.summonCooldown > 0) boss.summonCooldown -= dt;
 
@@ -178,10 +178,8 @@ function drawBoss() {
   const by = Math.round(boss.y);
   if (bx + boss.w < 0 || bx > GW) return;
 
-  // При смерти — эффект рассыпания (мигание)
-  if (boss.dead) {
-    if (Math.floor(boss.deathTimer * 10) % 2 === 0) return;
-  }
+  // При смерти — не рисуем тело, оно развалилось в ragdoll + частицы
+  if (boss.dead) return;
 
   const flashing = boss.flashTimer > 0 && Math.floor(boss.flashTimer * 20) % 2 === 0;
   const bodyCol = flashing ? '#000' : '#fff';
@@ -255,6 +253,18 @@ function drawBoss() {
     ctx.fillRect(bx, barY, Math.round(barW * boss.hp / boss.maxHP), 3);
   }
 
+  // HIT-FLASH overlay — белая вспышка при попадании
+  if (boss._hitFlash > 0 && !boss.dead) {
+    ctx.globalAlpha = Math.min(1, boss._hitFlash * 15);
+    ctx.fillStyle = '#fff';
+    // круглая форма чтобы соответствовать глазу
+    for (let dy = -r - 1; dy <= r + 1; dy++) {
+      const rowR = Math.floor(Math.sqrt(Math.max(0, (r + 1) * (r + 1) - dy * dy)));
+      ctx.fillRect(cx - rowR, cy + dy, rowR * 2, 1);
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // Название босса сверху (первая секунда боя)
   if (boss._moveT < 2.0 && !boss.dead) {
     const title = 'THE EYE';
@@ -270,16 +280,81 @@ function damageBoss(dmg) {
   if (!boss || boss.dead) return false;
   boss.hp -= dmg;
   boss.flashTimer = 0.2;
+  boss._hitFlash = 0.06;
   screenShake(2, 0.1);
+
+  // Частицы-брызги в точке удара (центр глаза, на стороне игрока)
+  const p = player;
+  const dir = (p.x + p.w/2) < (boss.x + boss.w/2) ? 1 : -1;
+  const impactX = boss.x + boss.w/2 - game.cam - dir * 10;
+  const impactY = boss.y + boss.h/2;
+  for (let k = 0; k < 10; k++) {
+    const baseAng = dir > 0 ? Math.PI : 0;
+    const ang = baseAng + (Math.random() - 0.5) * 1.4;
+    const spd = 100 + Math.random() * 140;
+    particles.push({
+      x: impactX, y: impactY,
+      vx: Math.cos(ang) * spd,
+      vy: Math.sin(ang) * spd - 50 - Math.random() * 40,
+      life: 1,
+      maxLife: 0.25 + Math.random() * 0.2,
+      size: 2 + Math.floor(Math.random() * 3),
+    });
+  }
+  game.freezeTimer = Math.max(game.freezeTimer, 0.04);
+
   if (boss.hp <= 0) {
     boss.hp = 0;
     boss.dead = true;
     boss.deathTimer = 0;
-    game.score += 10; // босс даёт большой бонус
+    game.score += 10;
     if (typeof say === 'function') say('kill');
     if (typeof playSting === 'function') playSting('bossDefeat');
     if (typeof playSound === 'function') playSound('explode');
     screenShake(8, 0.6);
+    game.freezeTimer = Math.max(game.freezeTimer, 0.18);
+
+    // МАССИВНЫЙ пиксельный распад глаза
+    const bcx = boss.x + boss.w / 2 - game.cam;
+    const bcy = boss.y + boss.h / 2;
+    // Большая центральная вспышка
+    particles.push({
+      x: bcx, y: bcy,
+      vx: 0, vy: 0,
+      life: 1, maxLife: 0.25,
+      size: boss.w * 1.2,
+      type: 'flash',
+    });
+    // Кольцевой взрыв из 40 "кубиков" глаза — разлетаются во все стороны
+    for (let i = 0; i < 40; i++) {
+      const ang = (i / 40) * Math.PI * 2 + Math.random() * 0.2;
+      const spd = 120 + Math.random() * 180;
+      const dist = Math.random() * 20; // стартуют чуть из центра
+      ragdolls.push({
+        x: bcx + Math.cos(ang) * dist,
+        y: bcy + Math.sin(ang) * dist,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd - 60,
+        size: 2 + Math.floor(Math.random() * 4),
+        life: 1,
+        maxLife: 0.8 + Math.random() * 0.8,
+        rot: Math.random() * 6 - 3,
+      });
+    }
+    // Дополнительная волна частиц-искр
+    for (let i = 0; i < 25; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 80 + Math.random() * 200;
+      particles.push({
+        x: bcx, y: bcy,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd - 80,
+        life: 1,
+        maxLife: 0.5 + Math.random() * 0.5,
+        size: 2 + Math.floor(Math.random() * 2),
+        type: 'star',
+      });
+    }
   } else {
     if (typeof playSting === 'function') playSting('hit');
   }
