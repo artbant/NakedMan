@@ -535,32 +535,56 @@ function scheduleBar(barStartTime, barIdx) {
     droneOsc.start(barStartTime); droneOsc.stop(barStartTime + barDuration + 0.05);
   }
 
+  // АМБИЕНТНЫЙ ПЭД — длинная мягкая нота на весь такт, всегда фоном.
+  // Создаёт "атмосферу" без драйва. Не играет в combat (там свой дрон).
+  if (!musicState.combat && barStartTime >= musicState.muteUntil) {
+    const padOsc = ctx.createOscillator();
+    const padGain = ctx.createGain();
+    padOsc.type = 'sine';
+    // альтернируем основной аккорд каждый такт: C → Eb → C → G
+    const padNotes = [ROOT - 12, ROOT - 12 + 3, ROOT - 12, ROOT - 12 + 7];
+    const padIdx = (game._barIndex || 0) % padNotes.length;
+    padOsc.frequency.setValueAtTime(midi(padNotes[padIdx]), barStartTime);
+    padGain.gain.setValueAtTime(0, barStartTime);
+    padGain.gain.linearRampToValueAtTime(0.025, barStartTime + 0.8);
+    padGain.gain.linearRampToValueAtTime(0.025, barStartTime + barDuration - 0.8);
+    padGain.gain.linearRampToValueAtTime(0, barStartTime + barDuration);
+    padOsc.connect(padGain); padGain.connect(game._musicGain || ctx.destination);
+    padOsc.start(barStartTime); padOsc.stop(barStartTime + barDuration + 0.05);
+  }
+
   for (let step = 0; step < BAR_STEPS; step++) {
     const t = barStartTime + step * STEP;
-    // Если в момент этой ноты должен быть mute (взрыв) — пропускаем всё
     if (t < musicState.muteUntil) continue;
 
-    // БАЗА: бас + хэт играют всегда
+    // БАС — играет всегда, но тише когда не combat
     const bassIdx = bassPat[step];
     if (bassIdx !== null) {
       const note = ROOT - 12 + SCALE[bassIdx];
-      scheduleBass(t, midi(note), STEP * 2);
+      const vol = musicState.combat ? 0.06 : 0.03;
+      scheduleBass(t, midi(note), STEP * 2, vol);
     }
-    if (HAT_PATTERN[step] !== null) {
+    // ХЭТ — только в combat (в амбиенте не нужен)
+    if (musicState.combat && HAT_PATTERN[step] !== null) {
       scheduleHat(t);
     }
 
-    // МЕЛОДИЯ: только когда игрок движется
+    // МЕЛОДИЯ — в амбиенте реже и тише, в combat полноценно
     if (musicState.moving) {
       const melIdx = melPat[step];
       if (melIdx !== null) {
-        let idx = melIdx;
-        if (Math.random() < 0.2) {
-          idx = Math.max(0, Math.min(SCALE.length - 1, idx + (Math.random() < 0.5 ? -1 : 1)));
+        // В амбиенте — играем только сильные доли (каждый 4-й степ)
+        const isStrongBeat = step % 4 === 0;
+        if (musicState.combat || isStrongBeat) {
+          let idx = melIdx;
+          if (Math.random() < 0.2) {
+            idx = Math.max(0, Math.min(SCALE.length - 1, idx + (Math.random() < 0.5 ? -1 : 1)));
+          }
+          const octaveShift = (Math.random() < 0.1) ? 0 : 12;
+          const note = ROOT + octaveShift + SCALE[idx];
+          const vol = musicState.combat ? 0.05 : 0.025;
+          scheduleMelody(t, midi(note), STEP * 1.5, vol);
         }
-        const octaveShift = (Math.random() < 0.1) ? 0 : 12;
-        const note = ROOT + octaveShift + SCALE[idx];
-        scheduleMelody(t, midi(note), STEP * 1.5);
       }
     }
 

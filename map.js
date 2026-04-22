@@ -449,8 +449,9 @@ function drawTile(tx, ty, type) {
 
 
 // ── ПОДЗЕМНЫЙ СЛОЙ — рисуется ДО тайлов ─────────────────────────────
-// Там где тайл сломан но рядом есть монолит — виден "подвал".
-// В ЧБ стиле: плотный дизеринг (много чёрного, редкие белые точки-камни).
+// Рисуем "подвал" ТОЛЬКО в полостях окружённых монолитом со всех сторон.
+// На поверхности (если сверху воздух) не рисуем — иначе создаётся
+// крапинка вдоль линии горизонта которая мешает читать персонажей.
 function drawUnderground() {
   const s = Math.floor(game.cam / T);
   const e = Math.min(MW, s + Math.ceil(GW / T) + 2);
@@ -459,19 +460,19 @@ function drawUnderground() {
   for (let ty = 0; ty < MH; ty++) {
     for (let tx = s; tx < e; tx++) {
       if (MAP[ty][tx] !== 0) continue;
-      const hasNeighbor =
-        (ty > 0      && MAP[ty-1][tx]) ||
-        (ty < MH-1   && MAP[ty+1][tx]) ||
-        (tx > 0      && MAP[ty][tx-1]) ||
-        (tx < MW-1   && MAP[ty][tx+1]);
-      if (!hasNeighbor) continue;
+      // Считаем это подземной полостью если:
+      // - сверху твёрдо (крыша)
+      // - и с боков есть опора
+      const hasAbove = ty > 0 && MAP[ty-1][tx];
+      const hasLeft = tx > 0 && MAP[ty][tx-1];
+      const hasRight = tx < MW-1 && MAP[ty][tx+1];
+      if (!hasAbove || (!hasLeft && !hasRight)) continue;
 
       const x = Math.round(tx * T - game.cam);
       const y = ty * T;
 
       ctx.fillStyle = '#000';
       ctx.fillRect(x, y, T, T);
-      // белые точки с плотностью из биома
       ctx.fillStyle = '#fff';
       for (let dy = 0; dy < T; dy++) {
         const row = BAYER4[(y + dy) % 4];

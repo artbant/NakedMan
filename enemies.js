@@ -783,12 +783,13 @@ function updateEnemies(dt) {
     if (!overlapX || !overlapY) continue;
 
     // Прыжок сверху — STOMP как в Broforce
-    // Если игрок падает и его ноги попадают в верхнюю треть врага
+    // Считаем stomp если: игрок падает И его ноги в ВЕРХНЕЙ ПОЛОВИНЕ врага
+    // (раньше было "верхняя треть" — слишком строго, промахивались часто)
     const pFeet = p.y + p.h;
-    const eTorso = e.y + e.h * 0.35;
-    const fallingDown = p.vy > 0;
+    const eMid = e.y + e.h * 0.55;  // середина чуть ниже — даём больше шансов
+    const fallingDown = p.vy >= -20; // почти падает (допускаем лёгкое зависание)
 
-    if (fallingDown && pFeet > eHitY && pFeet < eTorso + 4 && !p.punching) {
+    if (fallingDown && pFeet > eHitY && pFeet < eMid && !p.punching) {
       // Bruiser выдерживает stomp — только 1 урон, не умирает за раз
       if (e.type === 'bruiser') {
         e.hp--;
