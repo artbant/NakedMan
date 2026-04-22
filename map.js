@@ -408,8 +408,7 @@ function drawTile(tx, ty, type) {
   const flashing = tileFlash[key] !== undefined && Math.floor(tileFlash[key] * 20) % 2 === 0;
 
   if (flashing) {
-    // при ударе тайл "вспыхивает" — инверсия: почти весь белый с редкими
-    // чёрными точками (плотность белого 0.85)
+    // при ударе тайл "вспыхивает" — инверсия
     ctx.fillStyle = '#000';
     ctx.fillRect(x, y, T, T);
     ctx.fillStyle = '#fff';
@@ -423,25 +422,72 @@ function drawTile(tx, ty, type) {
     return;
   }
 
-  // ── МОНОЛИТ ─────────────────────────────────────────────────────
-  // Чёрный тайл. Повреждённый — сквозь него пробивается "свет"
-  // (белые точки по чёрному), плотность белого растёт с потерей HP.
-  const hp = tileHP[key];
+  // Чёрный фон тайла
   ctx.fillStyle = '#000';
   ctx.fillRect(x, y, T, T);
 
-  if (hp !== undefined) {
-    const maxHP = bt === 1 ? 1 : bt === 2 ? 2 : 3;
-    const ratio = hp / maxHP;
-    // Плотность "крошки" умножается на биомный множитель
-    const biomeIntensity = (currentBiome && currentBiome.tileCrackIntensity) || 1.0;
-    const whiteDensity = (0.45 - ratio * 0.30) * biomeIntensity;
+  // Проверяем — "поверхность" ли это (нет тайла сверху) или "нутро" (есть тайл сверху)
+  const isSurface = ty === 0 || !MAP[ty - 1] || !MAP[ty - 1][tx];
+
+  if (isSurface) {
+    // ── ПОВЕРХНОСТНЫЙ ТАЙЛ — текстура как в референсе ──
+    // 1. Сплошная белая линия на кромке (y=0)
     ctx.fillStyle = '#fff';
-    const d16 = Math.min(16, whiteDensity * 16);
+    ctx.fillRect(x, y, T, 1);
+    // 2. Зона плотного дизеринга (y=2-5, 4 ряда Bayer)
+    const denseD16 = 0.55 * 16;
+    for (let dy = 2; dy <= 5; dy++) {
+      const row = BAYER4[(y + dy) % 4];
+      for (let dx = 0; dx < T; dx++) {
+        if (denseD16 > row[(x + dx) % 4]) ctx.fillRect(x + dx, y + dy, 1, 1);
+      }
+    }
+    // 3. Полосатая зона (y=7-14) — чередуем линии точек и пустоту
+    for (let dy = 7; dy <= 14; dy++) {
+      const striRow = dy % 3; // каждый 3-й ряд — точки
+      if (striRow !== 0) continue;
+      const densD16 = 0.45 * 16;
+      const row = BAYER4[(y + dy) % 4];
+      for (let dx = 0; dx < T; dx++) {
+        if (densD16 > row[(x + dx) % 4]) ctx.fillRect(x + dx, y + dy, 1, 1);
+      }
+    }
+    // 4. Редкие точки в нижней части (y=16-23) — одиночные камни
+    for (let dy = 16; dy < T; dy++) {
+      const sparseRow = dy % 4;
+      if (sparseRow !== 0) continue;
+      const sparseD16 = 0.15 * 16;
+      const row = BAYER4[(y + dy) % 4];
+      for (let dx = 0; dx < T; dx++) {
+        if (sparseD16 > row[(x + dx) % 4]) ctx.fillRect(x + dx, y + dy, 1, 1);
+      }
+    }
+  } else {
+    // ── ВНУТРЕННИЙ ТАЙЛ — почти чёрный с очень редкими точками ──
+    ctx.fillStyle = '#fff';
+    const innerD16 = 0.08 * 16;
     for (let dy = 0; dy < T; dy++) {
       const row = BAYER4[(y + dy) % 4];
       for (let dx = 0; dx < T; dx++) {
-        if (d16 > row[(x + dx) % 4]) ctx.fillRect(x + dx, y + dy, 1, 1);
+        if (innerD16 > row[(x + dx) % 4]) ctx.fillRect(x + dx, y + dy, 1, 1);
+      }
+    }
+  }
+
+  // ── Повреждения — белые точки на месте удара ──
+  const hp = tileHP[key];
+  if (hp !== undefined) {
+    const maxHP = bt === 1 ? 1 : bt === 2 ? 2 : 3;
+    const ratio = hp / maxHP;
+    const whiteDensity = 0.35 * (1 - ratio);
+    if (whiteDensity > 0.01) {
+      ctx.fillStyle = '#fff';
+      const d16 = Math.min(16, whiteDensity * 16);
+      for (let dy = 0; dy < T; dy++) {
+        const row = BAYER4[(y + dy) % 4];
+        for (let dx = 0; dx < T; dx++) {
+          if (d16 > row[(x + dx) % 4]) ctx.fillRect(x + dx, y + dy, 1, 1);
+        }
       }
     }
   }
@@ -660,58 +706,9 @@ function getSkyCache() {
     ? new OffscreenCanvas(GW, GH)
     : Object.assign(document.createElement('canvas'), { width: GW, height: GH });
   const c = cnv.getContext('2d');
+  // Абсолютно чёрное небо — никаких звёзд, никакого тумана
   c.fillStyle = '#000';
   c.fillRect(0, 0, GW, GH);
-
-  const biome = currentBiome || BIOMES[0];
-  c.fillStyle = '#fff';
-  const horizonY = Math.round(GH * biome.horizonFrac);
-
-  // Хэш для псевдослучайного распределения
-  const hash = (x, y) => {
-    let h = (x * 73856093) ^ (y * 19349663);
-    h = (h ^ (h >>> 13)) * 1274126177;
-    return ((h ^ (h >>> 16)) >>> 0) / 0xffffffff;
-  };
-  // Низкочастотный хэш для "кластеров" — зёрна размером ~8×8
-  const clusterHash = (x, y) => hash(Math.floor(x / 8), Math.floor(y / 8));
-
-  for (let y = 0; y < horizonY; y++) {
-    const fromTop = y / horizonY;
-    const density = biome.starDensity * Math.pow(1 - fromTop, biome.starDecay);
-    if (density < 0.001) continue;
-    for (let x = 0; x < GW; x++) {
-      let effective = density;
-      // кластерный модификатор в биомах типа HIVE: звёзды идут зернами,
-      // некоторые зёрна полностью без звёзд
-      if (biome.clusteredStars) {
-        const cluster = clusterHash(x, y);
-        // в зоне с cluster < 0.3 — совсем нет звёзд, в cluster > 0.7 — гуще
-        if (cluster < 0.3) effective = 0;
-        else if (cluster > 0.7) effective *= 1.8;
-      }
-      if (hash(x, y) < effective) {
-        c.fillRect(x, y, 1, 1);
-      }
-    }
-  }
-
-  // туманный слой у горизонта (биом DUST)
-  if (biome.hasMist) {
-    const mistStart = Math.round(horizonY - GH * 0.08);
-    for (let y = mistStart; y < horizonY; y++) {
-      // плотность плавно растёт к горизонту от 0.1 до 0.5
-      const t = (y - mistStart) / (horizonY - mistStart);
-      const density = 0.1 + t * 0.4;
-      for (let x = 0; x < GW; x++) {
-        // пропускаем точки по bayer-паттерну для "пыли"
-        const bayer = BAYER4[(y % 4 + 4) % 4][(x % 4 + 4) % 4];
-        if (density * 16 > bayer && hash(x, y) < 0.7) {
-          c.fillRect(x, y, 1, 1);
-        }
-      }
-    }
-  }
 
   _skyCache = cnv;
   return cnv;
